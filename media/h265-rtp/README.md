@@ -13,6 +13,13 @@ controls alone do not establish target acceptance.
 
 ## Build and run
 
+The relay requests a 1 MiB receive buffer, falls back to 256 KiB and rejects
+smaller kernel-reported buffers. This keeps producer bursts separate from
+injected faults. On EmberBSD, an administrator can raise the socket limit
+with `sysctl -w kern.sbmax=8388608` before this bounded test. The target VM
+uses that setting. Buffer bytes do not guarantee a packet count; the wire
+checker must still detect unexpected ingress loss.
+
 The selected SDK uses GCC16.2, FFmpeg 9.0.2 with shared x265 4.2,
 GStreamer 1.28.8 and GLib 2.90.1. It needs the app/video, RTP, RTP manager,
 UDP, video parser, x265 and libav plugins. The target also needs matching
