@@ -187,14 +187,23 @@ begin
   summary['contexts'] = selected.map { |entry| entry.reject { |key, _| key == 'original' } }
   selected.each do |entry|
     tag = entry['name'].tr('.', '-')
+    # Cppcheck2.17 does not import -isystem search paths from this database.
+    # Keep the original compiler database untouched. Derive ordinary -I paths
+    # for Cppcheck only, with the same observed directories and search order.
+    cppcheck_arguments = entry['arguments'].map do |argument|
+      argument == '-isystem' ? '-I' : argument.sub(/\A-isystem(?=.)/, '-I')
+    end
+    cppcheck_arguments += entry['system_includes'].flat_map { |path| ['-I', path] }
     imported = { 'directory' => entry['directory'], 'file' => entry['file'],
-                 'arguments' => [*entry['arguments'], *entry['system_includes'].flat_map { |path| ['-isystem', path] }] }
+                 'arguments' => cppcheck_arguments }
     imported_path = File.join(output, "#{tag}-cppcheck-commands.json")
     save_json(imported_path, [imported])
     checked = run_command(output, "#{tag}-cppcheck",
                           [cppcheck, "--project=#{imported_path}", '--enable=all', '--inconclusive',
                            '--check-level=exhaustive', '--error-exitcode=1', '--xml', '--xml-version=2'], build)
     summary['checks'] << checked
+    checked['derived_database_reason'] = 'Cppcheck2.17 does not import -isystem directories; use identical observed paths as -I for this tool only.'
+    checked['original_database'] = 'compile_commands.original.json'
     findings, metadata = cppcheck_findings(File.join(output, "#{tag}-cppcheck.stderr"))
     checked['findings'] = findings
     checked['checker_metadata'] = metadata

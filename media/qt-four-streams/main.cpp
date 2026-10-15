@@ -525,13 +525,14 @@ private:
             return;
         }
         observationEndUs_ = elapsedUs();
-        for (const Channel &channel : channels_) {
-            if (!channel.playing || channel.eof
-                    || channel.delivered <= channel.observationStartDelivered
-                    || channel.painted <= channel.observationStartPainted) {
-                finish(7, QStringLiteral("Each live stream must continue delivering and painting during the observation"));
-                return;
-            }
+        const bool inactive = std::any_of(channels_.cbegin(), channels_.cend(), [](const Channel &channel) {
+            return !channel.playing || channel.eof
+                || channel.delivered <= channel.observationStartDelivered
+                || channel.painted <= channel.observationStartPainted;
+        });
+        if (inactive) {
+            finish(7, QStringLiteral("Each live stream must continue delivering and painting during the observation"));
+            return;
         }
         validateCompletion();
     }

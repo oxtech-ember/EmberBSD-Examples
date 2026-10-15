@@ -100,7 +100,20 @@ begin
              note: 'RFB observations are not decoder or presentation FPS measurements.',
              ppm_storage_budget_bytes: RfbCapture::MAX_BYTES }
   save_report(directory, report)
-  socket = Socket.tcp(host == 'localhost' ? '127.0.0.1' : host, port_text.to_i, connect_timeout: 5)
+  connect_deadline = started + 5
+  report[:connection_attempts] = 0
+  loop do
+    report[:connection_attempts] += 1
+    remaining = connect_deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    raise CaptureDeadline, 'Connect deadline' unless remaining.positive?
+    begin
+      socket = Socket.tcp(host == 'localhost' ? '127.0.0.1' : host, port_text.to_i,
+                          connect_timeout: [remaining, 1].min)
+      break
+    rescue Errno::ECONNREFUSED
+      sleep([remaining, 0.05].min)
+    end
+  end
   client = RfbCapture.new(socket)
   handshake_deadline = [started + 10, started + 60].min
   banner = client.read_exact(12, handshake_deadline)
