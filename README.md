@@ -13,6 +13,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 ## Examples
 
 - [Local text generation and speech recognition with llama.cpp and whisper.cpp](ai/local-inference/README.md)
+- [ONNX Runtime CPU inference through installed C and C++ APIs](ai/onnx-cpu/README.md)
 - [Answers from local documents with SQLite FTS5 and llama.cpp](ai/local-knowledge/README.md)
 - [Simulated device telemetry and commands with Zenoh and ROS 2 Jazzy](robotics/zenoh-ros2/README.md)
 - [A software BPSK radio channel with GNU Radio](robotics/gnuradio-channel/README.md)
