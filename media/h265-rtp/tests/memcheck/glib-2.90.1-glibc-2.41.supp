@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: MIT
+# Native Linux evidence only. Verify the library hashes in README.md first.
+# GLib 2.90.1 keeps its global pool-spawner for the process lifetime.
+# These exact stacks match only possible TLS leaks. They do not match definite
+# leaks, indirect leaks, uninitialized data, or invalid memory accesses.
+{
+   glib_2_90_1_gst_task_pool_spawner_tls_glibc_2_41
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:calloc
+   fun:allocate_dtv
+   fun:_dl_allocate_tls
+   fun:allocate_stack
+   fun:pthread_create@@GLIBC_2.34
+   fun:g_system_thread_new
+   fun:g_thread_pool_new_full
+   fun:default_prepare
+}
+{
+   glib_2_90_1_pool_worker_tls_glibc_2_41
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:calloc
+   fun:allocate_dtv
+   fun:_dl_allocate_tls
+   fun:allocate_stack
+   fun:pthread_create@@GLIBC_2.34
+   fun:g_system_thread_new
+   fun:g_thread_pool_spawn_thread
+   fun:g_thread_proxy
+   fun:start_thread
+   fun:clone
+}
