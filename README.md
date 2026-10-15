@@ -17,6 +17,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [Simulated device telemetry and commands with Zenoh and ROS 2 Jazzy](robotics/zenoh-ros2/README.md)
 - [A software BPSK radio channel with GNU Radio](robotics/gnuradio-channel/README.md)
 - [Offline RGB-D SLAM and trajectory evaluation with ORB-SLAM3](robotics/orb-slam3-rgbd/README.md)
+- [Plan a path around a rectangle with OMPL](robotics/ompl-path/README.md)
 - [UTM framebuffer validation (retired KDE 4 setup)](desktop/kde-utm/README.md)
 - [GNOME desktop in the same UTM guest](desktop/gnome-utm/README.md)
 - [Wayland client and compositor nested inside Xorg](desktop/wayland-nested/README.md)
