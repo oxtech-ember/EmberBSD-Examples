@@ -12,6 +12,7 @@ class CaptureDeadline < StandardError; end
 
 class RfbCapture
   MAX_BYTES = 64 * 1024 * 1024
+  REQUEST_INTERVAL_MS = 1000
   attr_reader :received, :sent, :partial_read
 
   def initialize(socket)
@@ -97,6 +98,7 @@ begin
   report = { schema: 'emberbsd.qt-four-streams.rfb.v1', status: 'connecting',
              created_utc: Time.now.utc.iso8601, host: host, port: port_text.to_i,
              requested_duration_ms: duration_text.to_i, frames: [], updates: [],
+             requested_interval_ms: RfbCapture::REQUEST_INTERVAL_MS,
              note: 'RFB observations are not decoder or presentation FPS measurements.',
              ppm_storage_budget_bytes: RfbCapture::MAX_BYTES }
   save_report(directory, report)
@@ -233,7 +235,7 @@ begin
           raise "Unsupported server message #{type}"
         end
       end
-      next_request = [request_started + 0.2, client.now].max
+      next_request = [request_started + RfbCapture::REQUEST_INTERVAL_MS / 1000.0, client.now].max
     end
     report[:status] = 'complete'
   rescue CaptureDeadline => error

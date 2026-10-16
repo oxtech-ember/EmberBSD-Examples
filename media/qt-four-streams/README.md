@@ -110,6 +110,7 @@ Acceptance requires an exposed window, a real painted image in each quadrant,
 four EOF signals and overlapping frame-delivery intervals and playing states.
 `offscreen`, `minimal` and `minimalegl` platforms cannot satisfy this mode.
 A VNC QPA display still requires real exposure; save independent client evidence.
+`tests/rfb-capture.rb` requests full-frame samples at 1 Hz to reduce observer overhead; samples do not measure presentation FPS.
 The default acceptance timeout is 60000 milliseconds.
 Without `--accept`, there is no timeout unless `--timeout-ms` is set.
 
