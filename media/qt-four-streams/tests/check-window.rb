@@ -46,7 +46,8 @@ begin
   width_text, height_text, max_text = 3.times.map { token.call }
   raise 'Invalid PPM numbers' unless [width_text, height_text, max_text].all? { |s| s.match?(/\A[0-9]+\z/) }
   width, height, max_value = [width_text, height_text, max_text].map(&:to_i)
-  raise 'Expected full-screen 1280x800 RGB888 capture' unless width == 1280 && height == 800 && max_value == 255
+  raise 'Expected an even RGB888 capture from 160x120 through 32768x32768' unless
+    (160..32_768).cover?(width) && (120..32_768).cover?(height) && width.even? && height.even? && max_value == 255
   separator = bytes.byteslice(position, 2) == "\r\n" ? 2 : 1
   raise 'PPM header separator missing' unless " \t\r\n".include?(bytes.byteslice(position, 1))
   rgb = bytes.byteslice(position + separator..)

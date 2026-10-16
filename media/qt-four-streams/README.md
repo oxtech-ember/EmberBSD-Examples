@@ -51,7 +51,7 @@ The report records the actual filter, both conversion counts, the final image di
 the loaded libswscale version, and verification/conversion wall microseconds.
 It makes no performance claim until the selected target has been measured.
 
-Sink notifications enter a mutex-protected mailbox of at most eight frames
+Sink notifications enter a mutex-protected mailbox of at most 16 frames
 per channel. A precise GUI timer processes at most one frame per channel
 every ten milliseconds. Producer callbacks access no widgets or GUI state.
 An overflowing mailbox drops its oldest frame and records the coalescence.

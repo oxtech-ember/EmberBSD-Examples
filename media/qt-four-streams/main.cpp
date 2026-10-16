@@ -53,6 +53,7 @@ extern "C" {
 
 namespace {
 constexpr std::size_t streamCount = 4;
+constexpr std::size_t frameMailboxCapacity = 16;
 
 struct Fixture {
     int width = 0;
@@ -224,7 +225,7 @@ public:
                 if (mailbox->validSignals++ == 0)
                     mailbox->firstSignal = now;
                 mailbox->lastSignal = now;
-                if (mailbox->frames.size() == 8) {
+                if (mailbox->frames.size() == frameMailboxCapacity) {
                     mailbox->frames.pop_front();
                     ++mailbox->coalesced;
                 }
@@ -833,7 +834,7 @@ private:
         result.insert(QStringLiteral("force_qt_conversion"), config_.qtConversion);
         result.insert(QStringLiteral("libswscale_requested_filter"), scalingFilterName(config_.scalingFilter));
         result.insert(QStringLiteral("libswscale_version"), static_cast<qint64>(swscale_version()));
-        result.insert(QStringLiteral("frame_mailbox_capacity_per_stream"), 8);
+        result.insert(QStringLiteral("frame_mailbox_capacity_per_stream"), static_cast<qint64>(frameMailboxCapacity));
         result.insert(QStringLiteral("require_all_fixture_frames"), config_.requireAll);
         result.insert(QStringLiteral("fixture_nominal_fps"), config_.fixture.fps);
         result.insert(QStringLiteral("fps_definition"), QStringLiteral("(observed_count-1)/(last_observation-first_observation), wall seconds"));
