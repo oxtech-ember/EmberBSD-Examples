@@ -71,7 +71,17 @@ struct Configuration {
     Fixture fixture;
     bool requireAll = false;
     bool qtConversion = false;
+    SwsScaler scalingFilter = SWS_SCALE_POINT;
 };
+
+QString scalingFilterName(SwsScaler filter)
+{
+    switch (filter) {
+    case SWS_SCALE_POINT: return QStringLiteral("point");
+    case SWS_SCALE_BILINEAR: return QStringLiteral("bilinear");
+    default: return QStringLiteral("unknown");
+    }
+}
 
 qint64 timevalUs(const timeval &value)
 {
@@ -507,7 +517,7 @@ private:
             channel.scaler.reset(sws_alloc_context());
             if (!channel.scaler)
                 return {};
-            channel.scaler->scaler = SWS_SCALE_BILINEAR;
+            channel.scaler->scaler = config_.scalingFilter;
             channel.scaler->threads = 1;
         }
         const int status = sws_scale_frame(channel.scaler.get(), output.get(), &input);
@@ -821,6 +831,7 @@ private:
         result.insert(QStringLiteral("four_players_playing_overlap_us"), overlapUs_);
         result.insert(QStringLiteral("full_pixel_verification"), config_.fixture.enabled());
         result.insert(QStringLiteral("force_qt_conversion"), config_.qtConversion);
+        result.insert(QStringLiteral("libswscale_requested_filter"), scalingFilterName(config_.scalingFilter));
         result.insert(QStringLiteral("libswscale_version"), static_cast<qint64>(swscale_version()));
         result.insert(QStringLiteral("frame_mailbox_capacity_per_stream"), 8);
         result.insert(QStringLiteral("require_all_fixture_frames"), config_.requireAll);
@@ -867,9 +878,12 @@ private:
             item.insert(QStringLiteral("frame_handle_type"), static_cast<int>(channel.handleType));
             item.insert(QStringLiteral("libswscale_viewport_frames"), channel.swscaleFrames);
             item.insert(QStringLiteral("qt_to_image_frames"), channel.qtImageFrames);
+            item.insert(QStringLiteral("libswscale_filter"), channel.swscaleFrames > 0
+                        ? scalingFilterName(channel.scaler->scaler) : QStringLiteral("none"));
             item.insert(QStringLiteral("display_conversion"), channel.swscaleFrames > 0
                         ? (channel.qtImageFrames > 0 ? QStringLiteral("mixed")
-                           : QStringLiteral("libswscale-bilinear-bt709-video-yuv420p-to-viewport-rgb32"))
+                           : QStringLiteral("libswscale-%1-bt709-video-yuv420p-to-viewport-rgb32")
+                             .arg(scalingFilterName(channel.scaler->scaler)))
                         : (channel.qtImageFrames > 0 ? QStringLiteral("qt-to-image") : QStringLiteral("none")));
             item.insert(QStringLiteral("display_image_width"), channel.image.width());
             item.insert(QStringLiteral("display_image_height"), channel.image.height());
@@ -1067,7 +1081,10 @@ int main(int argc, char **argv)
         QStringLiteral("Fail if any expected fixture frame does not reach QVideoSink."));
     const QCommandLineOption qtConversion(QStringList{QStringLiteral("qt-conversion")},
         QStringLiteral("Use Qt toImage for every frame instead of viewport-sized libswscale conversion."));
-    parser.addOptions({accept, timeout, live, size, fixture, requireAll, qtConversion});
+    const QCommandLineOption scalingFilter(QStringList{QStringLiteral("scaling-filter")},
+        QStringLiteral("libswscale display filter: point or bilinear. Default: point."),
+        QStringLiteral("filter"), QStringLiteral("point"));
+    parser.addOptions({accept, timeout, live, size, fixture, requireAll, qtConversion, scalingFilter});
     parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Four distinct readable media files."),
                                  QStringLiteral("FILE0 FILE1 FILE2 FILE3"));
     parser.process(app);
@@ -1076,6 +1093,11 @@ int main(int argc, char **argv)
         parser.showHelp(2);
     Configuration config;
     config.qtConversion = parser.isSet(qtConversion);
+    const QString filter = parser.value(scalingFilter);
+    if (filter == QStringLiteral("bilinear"))
+        config.scalingFilter = SWS_SCALE_BILINEAR;
+    else if (filter != QStringLiteral("point"))
+        parser.showHelp(2);
     for (std::size_t index = 0; index < streamCount; ++index)
         config.paths[index] = QFileInfo(paths[static_cast<qsizetype>(index)]).absoluteFilePath();
     if (parser.isSet(accept)) {

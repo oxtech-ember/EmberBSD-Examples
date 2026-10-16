@@ -38,7 +38,8 @@ No audio output is attached.
 For SDR YUV420P frames with explicit BT.709 transfer, matrix and video range,
 the default CPU path scales luma and chroma to the actual image rectangle
 before RGB conversion. It uses the current public `sws_scale_frame()` API,
-bilinear scaling and one scaling thread per channel.
+nearest-neighbor scaling and one scaling thread per channel.
+`--scaling-filter point|bilinear` selects the filter; the default is `point`.
 The full-resolution decode and optional full-pixel oracle stay unchanged.
 A cached padded YUV buffer copies only actual mapped pixels: Qt does not
 guarantee the extra plane padding required by libswscale's SIMD readers.
@@ -46,7 +47,7 @@ The output is a viewport-sized native RGB32 `QImage`.
 
 Other formats, HDR, cropped or transformed frames use Qt `toImage()`.
 `--qt-conversion` forces that path for a conversion-only comparison.
-The report records both actual conversion counts, the final image dimensions,
+The report records the actual filter, both conversion counts, the final image dimensions,
 the loaded libswscale version, and verification/conversion wall microseconds.
 It makes no performance claim until the selected target has been measured.
 
