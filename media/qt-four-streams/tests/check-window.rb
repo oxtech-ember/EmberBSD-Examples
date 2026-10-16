@@ -5,11 +5,16 @@ require 'json'
 require 'digest'
 
 # This sampled oracle consumes an actual P6 framebuffer capture. It excludes
-# labels and letterboxes. RGB tolerance is two code values for conversion and
-# integer rounding. Downscaled markers are sampled as displayed pixels; their
-# eight individual bits need not survive scaling. Ambiguous channels fail.
-unless ARGV.length == 2 && (match = /\A([1-9][0-9]*)x([1-9][0-9]*):([1-9][0-9]*)\z/.match(ARGV[1]))
-  warn 'Usage: check-window.rb CAPTURE.ppm FIXTURE_WIDTHxHEIGHT:FRAMES'
+# labels and letterboxes. Nearest mode preserves the original Qt oracle.
+# Bilinear mode uses independent triangle-filter marker predictions and samples
+# constant block interiors. FFmpeg's integer limited-range conversion can leave
+# neutral R=B, G=R-2: check median brightness and neutral spread separately, each
+# within two code values. Do not broaden the per-channel nearest-mode tolerance.
+# The marker must still distinguish periodic body patterns and wrong channels.
+sampling = ARGV[2] || 'nearest'
+unless (2..3).cover?(ARGV.length) && %w[nearest bilinear].include?(sampling) &&
+       (match = /\A([1-9][0-9]*)x([1-9][0-9]*):([1-9][0-9]*)\z/.match(ARGV[1]))
+  warn 'Usage: check-window.rb CAPTURE.ppm FIXTURE_WIDTHxHEIGHT:FRAMES [nearest|bilinear]'
   exit 2
 end
 
@@ -58,6 +63,17 @@ begin
   end
   raise 'Fixture has no visible destination' unless fitted_width.positive? && fitted_height.positive?
   scale = fitted_width.to_f / fixture_width
+  triangle = lambda do |coordinate, source_size, destination_size|
+    ratio = source_size.to_f / destination_size
+    center = (coordinate + 0.5) * ratio - 0.5
+    radius = [ratio, 1.0].max
+    weights = ((center - radius).ceil..(center + radius).floor).filter_map do |pixel|
+      weight = [0.0, 1.0 - (pixel - center).abs / radius].max
+      [[[pixel, 0].max, source_size - 1].min, weight] if weight.positive?
+    end
+    total = weights.sum(&:last)
+    weights.map { |pixel, weight| [pixel, weight / total] }
+  end
   # Use actual block interiors. Small fixtures get several interior points.
   points = []
   (0...fixture_height).step(64) do |block_y|
@@ -94,9 +110,18 @@ begin
       actual_x = ((local_x + 0.5) * fixture_width / fitted_width).floor
       actual_y = ((local_y + 0.5) * fixture_height / fitted_height).floor
       next if actual_x < 16 && actual_y < 16
+      if sampling == 'bilinear'
+        xs = triangle.call(local_x, fixture_width, fitted_width)
+        ys = triangle.call(local_y, fixture_height, fitted_height)
+        # Every filter tap must remain in one constant fixture block and must
+        # exclude the marker. This avoids accepting edge blends as raw pixels.
+        next unless xs.all? { |x, _| x / 64 == actual_x / 64 } &&
+                    ys.all? { |y, _| y / 64 == actual_y / 64 }
+        next if xs.any? { |x, _| x < 16 } && ys.any? { |y, _| y < 16 }
+      end
       screen_x, screen_y = destination_x + local_x, destination_y + local_y
       pixel = rgb.byteslice((screen_y * width + screen_x) * 3, 3).bytes
-      [actual_x, actual_y, screen_x, screen_y, pixel]
+      [actual_x, actual_y, screen_x, screen_y, pixel, nil]
     end
     marker_columns = [(16.0 * fitted_width / fixture_width).ceil, fitted_width].min
     marker_rows = [(16.0 * fitted_height / fixture_height).ceil, fitted_height].min
@@ -107,7 +132,12 @@ begin
         actual_y = ((marker_y + 0.5) * fixture_height / fitted_height).floor
         next unless actual_x < 16 && actual_y < 16
         pixel = rgb.byteslice(((destination_y + marker_y) * width + destination_x + marker_x) * 3, 3).bytes
-        samples << [actual_x, actual_y, destination_x + marker_x, destination_y + marker_y, pixel]
+        taps = if sampling == 'bilinear'
+                 triangle.call(marker_x, fixture_width, fitted_width).flat_map do |x, wx|
+                   triangle.call(marker_y, fixture_height, fitted_height).map { |y, wy| [x, y, wx * wy] }
+                 end
+               end
+        samples << [actual_x, actual_y, destination_x + marker_x, destination_y + marker_y, pixel, taps]
       end
     end
     samples.uniq!
@@ -115,20 +145,31 @@ begin
     score = lambda do |frame, candidate_channel|
       mismatches = 0
       max_error = 0
+      max_check_error = 0
       total_error = 0
-      samples.each do |x, y, _screen_x, _screen_y, actual|
-        luma = if x < 16 && y < 16
-                 (frame & (1 << (x / 2))).zero? ? 16 : 235
-               else
-                 16 + ((x / 64 + 3 * (y / 64) + 5 * frame + 41 * candidate_channel) % 220)
-               end
+      samples.each do |x, y, _screen_x, _screen_y, actual, taps|
+        fixture_luma = lambda do |sx, sy|
+          if sx < 16 && sy < 16
+            (frame & (1 << (sx / 2))).zero? ? 16 : 235
+          else
+            16 + ((sx / 64 + 3 * (sy / 64) + 5 * frame + 41 * candidate_channel) % 220)
+          end
+        end
+        luma = taps ? taps.sum { |sx, sy, weight| fixture_luma.call(sx, sy) * weight } : fixture_luma.call(x, y)
         expected = ((luma - 16) * 255.0 / 219).round
-        errors = actual.map { |value| (value - expected).abs }
+        rgb_errors = actual.map { |value| (value - expected).abs }
+        errors = if sampling == 'bilinear'
+                   [(actual.sort[1] - expected).abs, actual.max - actual.min]
+                 else
+                   rgb_errors
+                 end
         mismatches += 1 if errors.max > 2
-        max_error = [max_error, errors.max].max
-        total_error += errors.sum
+        max_error = [max_error, rgb_errors.max].max
+        max_check_error = [max_check_error, errors.max].max
+        total_error += rgb_errors.sum
       end
-      { frame_id: frame, mismatched_points: mismatches, max_rgb_error: max_error, total_rgb_error: total_error }
+      { frame_id: frame, mismatched_points: mismatches, max_rgb_error: max_error,
+        max_color_check_error: max_check_error, total_rgb_error: total_error }
     end
     candidates = frames.times.map { |frame| score.call(frame, channel) }
     matching = candidates.select { |candidate| candidate[:mismatched_points].zero? }
@@ -144,13 +185,19 @@ begin
       matching_frame_ids: matching.map { |candidate| candidate[:frame_id] },
       ambiguous_other_channels: alternatives,
       sampled_points: samples.length, marker_resolved: marker_resolved,
+      bilinear_marker_samples: samples.count { |sample| sample[5] },
       destination: [destination_x, destination_y, fitted_width, fitted_height], best_candidate: best }
   end
   result = { schema: 'emberbsd.qt-four-streams.window-check.v1',
              success: channels.all? { |channel| channel[:plausible] },
              capture_sha256: Digest::SHA256.hexdigest(bytes), width: width, height: height,
              fixture_width: fixture_width, fixture_height: fixture_height, frames: frames,
-             rgb_rounding_tolerance: 2, channels: channels,
+             sampling_model: sampling == 'bilinear' ? 'triangle-marker-and-constant-block-interiors' : 'nearest-displayed-pixels',
+             color_check: sampling == 'bilinear' ? 'median-brightness-and-neutral-rgb-spread' : 'each-rgb-channel',
+             rgb_rounding_tolerance: sampling == 'nearest' ? 2 : nil,
+             brightness_rounding_tolerance: sampling == 'bilinear' ? 2 : nil,
+             neutral_rgb_spread_tolerance: sampling == 'bilinear' ? 2 : nil,
+             channels: channels,
              limitation: 'Sampled scaled-image plausibility; scaling can leave ambiguous IDs or channels. Ambiguous channels fail. No display timing or FPS claim.' }
   puts JSON.pretty_generate(result)
   exit(result[:success] ? 0 : 1)
