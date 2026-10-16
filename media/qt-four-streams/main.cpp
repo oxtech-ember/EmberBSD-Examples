@@ -132,7 +132,7 @@ struct FrameMailbox {
     std::atomic<bool> accepting{true};
     std::mutex mutex;
     std::deque<QVideoFrame> frames;
-    qint64 signals = 0, validSignals = 0, invalidSignals = 0;
+    qint64 notifications = 0, validSignals = 0, invalidSignals = 0;
     qint64 coalesced = 0, dequeued = 0, discardedOnStop = 0;
     std::size_t peak = 0;
     std::chrono::steady_clock::time_point firstSignal{}, lastSignal{};
@@ -205,7 +205,7 @@ public:
                 const std::lock_guard<std::mutex> lock(mailbox->mutex);
                 if (!mailbox->accepting.load())
                     return;
-                ++mailbox->signals;
+                ++mailbox->notifications;
                 if (!frame.isValid()) {
                     ++mailbox->invalidSignals;
                     return;
@@ -879,7 +879,7 @@ private:
                 const FrameMailbox &mailbox = *channel.mailbox;
                 const std::lock_guard<std::mutex> lock(channel.mailbox->mutex);
                 const auto span = std::chrono::duration_cast<std::chrono::microseconds>(mailbox.lastSignal - mailbox.firstSignal).count();
-                item.insert(QStringLiteral("sink_frame_notifications"), mailbox.signals);
+                item.insert(QStringLiteral("sink_frame_notifications"), mailbox.notifications);
                 item.insert(QStringLiteral("sink_valid_frame_notifications"), mailbox.validSignals);
                 item.insert(QStringLiteral("sink_invalid_frame_notifications"), mailbox.invalidSignals);
                 item.insert(QStringLiteral("sink_signal_span_us"), static_cast<qint64>(span));
