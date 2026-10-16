@@ -4,6 +4,7 @@ This C++17 example uses four real `QMediaPlayer` and `QVideoSink` pairs.
 Each sink supplies decoded `QVideoFrame` objects through a bounded mailbox.
 The application converts actual decoded pixels and paints four images in one
 `QWidget` window with `QPainter`. This display path does not require OpenGL.
+Only dirty quadrants repaint; source labels use cached plain-text `QStaticText` objects.
 Use the current shared EmberBSD Qt 6.12 and FFmpeg providers.
 Select a software decoder in the multimedia backend configuration.
 The viewer also links the current FFmpeg9 `libswscale` and `libavutil` APIs.
@@ -196,6 +197,14 @@ The nominal frame rate labels the fixture; it never replaces observed rates.
 Full-pixel verification adds CPU work and can affect scheduling.
 
 ## Checks
+
+`tests/check-report.rb REPORT_JSON EXPECTED_FRAMES NOMINAL_FPS MINIMUM_OBSERVED_FPS`
+checks strict EOF completion for all four streams and the adjacent `frames.csv`.
+It checks counts, full-pixel verification, PTS order, exposure, overlap and CPU data,
+then recomputes delivery and paint FPS from actual CSV wall timestamps.
+Supply the minimum explicitly: `36 9 8.95` checks 36 frames at nominal 9 fps
+with a minimum observed rate of 8.95 fps (9.0 rounded to one decimal place).
+The JSON output retains the actual rates and every failed condition.
 
 `tests/check-fixtures.rb FFMPEG FFPROBE FIXTURES NEW_OUT` decodes each encoded
 file and compares every output byte with the generator's streaming hash.

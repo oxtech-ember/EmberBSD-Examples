@@ -16,7 +16,9 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QRegularExpression>
+#include <QRegion>
 #include <QSaveFile>
+#include <QStaticText>
 #include <QTimer>
 #include <QUrl>
 #include <QVideoFrame>
@@ -155,6 +157,7 @@ struct Channel {
     QMediaPlayer *player = nullptr;
     QVideoSink *sink = nullptr;
     QImage image;
+    QStaticText label;
     QSize presentationSize;
     std::shared_ptr<FrameMailbox> mailbox = std::make_shared<FrameMailbox>();
     std::unique_ptr<SwsContext, SwsDeleter> scaler;
@@ -205,6 +208,10 @@ public:
         setAutoFillBackground(false);
         for (std::size_t index = 0; index < streamCount; ++index) {
             Channel &channel = channels_[index];
+            channel.label.setTextFormat(Qt::PlainText);
+            channel.label.setText(QStringLiteral("%1: %2")
+                .arg(static_cast<qulonglong>(index)).arg(QFileInfo(config_.paths[index]).fileName()));
+            channel.label.prepare(QTransform(), font());
             channel.player = new QMediaPlayer(this);
             channel.sink = new QVideoSink(this);
             channel.player->setVideoSink(channel.sink);
@@ -348,24 +355,25 @@ public:
     }
 
 protected:
-    void paintEvent(QPaintEvent *) override
+    void paintEvent(QPaintEvent *event) override
     {
         QPainter painter(this);
-        painter.fillRect(rect(), QColor(15, 17, 20));
+        painter.fillRect(event->rect(), QColor(15, 17, 20));
         const bool exposed = observeExposure();
         for (std::size_t index = 0; index < streamCount; ++index) {
             Channel &channel = channels_[index];
             const QRect tile = tileRect(index);
+            if (!event->region().intersects(tile))
+                continue;
+            painter.setClipRect(tile);
             painter.setPen(Qt::white);
-            painter.drawText(tile.adjusted(8, 2, -8, -2), Qt::AlignLeft | Qt::AlignTop,
-                             QStringLiteral("%1: %2  frames %3 / paints %4")
-                             .arg(static_cast<qulonglong>(index))
-                             .arg(QFileInfo(config_.paths[index]).fileName())
-                             .arg(channel.delivered).arg(channel.painted));
+            painter.drawStaticText(tile.topLeft() + QPoint(8, 2), channel.label);
             if (channel.image.isNull())
                 continue;
-            painter.drawImage(imageRect(index, channel.presentationSize), channel.image);
-            if (exposed && !done_ && channel.paintedGeneration != channel.delivered) {
+            const QRect destination = imageRect(index, channel.presentationSize);
+            painter.drawImage(destination, channel.image);
+            if (exposed && !done_ && event->region().intersects(destination)
+                    && channel.paintedGeneration != channel.delivered) {
                 const qint64 now = elapsedUs();
                 channel.paintedGeneration = channel.delivered;
                 ++channel.painted;
@@ -712,7 +720,7 @@ private:
             finish(2, QStringLiteral("Cannot write per-frame CSV"));
             return;
         }
-        update();
+        update(tileRect(index));
         startLiveObservation();
     }
 
