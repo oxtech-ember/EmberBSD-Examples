@@ -27,13 +27,23 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <deque>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 #include <sys/resource.h>
+
+extern "C" {
+#include <libavutil/frame.h>
+#include <libswscale/swscale.h>
+}
 
 #if defined(__NetBSD__)
 #include <link_elf.h>
@@ -60,6 +70,7 @@ struct Configuration {
     QSize windowSize{1280, 800};
     Fixture fixture;
     bool requireAll = false;
+    bool qtConversion = false;
 };
 
 qint64 timevalUs(const timeval &value)
@@ -111,10 +122,32 @@ QStringList loadedLibraries()
     return libraries;
 }
 
+struct AvFrameDeleter {
+    void operator()(AVFrame *value) const { av_frame_free(&value); }
+};
+struct SwsDeleter {
+    void operator()(SwsContext *value) const { sws_free_context(&value); }
+};
+struct FrameMailbox {
+    std::atomic<bool> accepting{true};
+    std::mutex mutex;
+    std::deque<QVideoFrame> frames;
+    qint64 signals = 0, validSignals = 0, invalidSignals = 0;
+    qint64 coalesced = 0, dequeued = 0, discardedOnStop = 0;
+    std::size_t peak = 0;
+    std::chrono::steady_clock::time_point firstSignal{}, lastSignal{};
+};
+
 struct Channel {
     QMediaPlayer *player = nullptr;
     QVideoSink *sink = nullptr;
     QImage image;
+    QSize presentationSize;
+    std::shared_ptr<FrameMailbox> mailbox = std::make_shared<FrameMailbox>();
+    std::unique_ptr<SwsContext, SwsDeleter> scaler;
+    std::unique_ptr<AVFrame, AvFrameDeleter> scalingInput;
+    qint64 swscaleFrames = 0, qtImageFrames = 0;
+    qint64 verificationUs = 0, conversionUs = 0;
     qint64 delivered = 0;
     qint64 painted = 0;
     qint64 paintedGeneration = 0;
@@ -164,8 +197,30 @@ public:
             channel.player->setVideoSink(channel.sink);
             if (config_.fixture.enabled())
                 channel.seen.resize(static_cast<std::size_t>(config_.fixture.frames), false);
+            const auto mailbox = channel.mailbox;
             connect(channel.sink, &QVideoSink::videoFrameChanged, this,
-                    [this, index](const QVideoFrame &frame) { receive(index, frame); });
+                    [mailbox](const QVideoFrame &frame) {
+                if (!mailbox->accepting.load())
+                    return;
+                const std::lock_guard<std::mutex> lock(mailbox->mutex);
+                if (!mailbox->accepting.load())
+                    return;
+                ++mailbox->signals;
+                if (!frame.isValid()) {
+                    ++mailbox->invalidSignals;
+                    return;
+                }
+                const auto now = std::chrono::steady_clock::now();
+                if (mailbox->validSignals++ == 0)
+                    mailbox->firstSignal = now;
+                mailbox->lastSignal = now;
+                if (mailbox->frames.size() == 8) {
+                    mailbox->frames.pop_front();
+                    ++mailbox->coalesced;
+                }
+                mailbox->frames.push_back(frame);
+                mailbox->peak = std::max(mailbox->peak, mailbox->frames.size());
+            }, Qt::DirectConnection);
             connect(channel.player, &QMediaPlayer::playbackStateChanged, this,
                     [this, index](QMediaPlayer::PlaybackState state) {
                 updateOverlap();
@@ -195,9 +250,7 @@ public:
                                .arg(static_cast<qulonglong>(index)));
                         return;
                     }
-                    if (std::all_of(channels_.begin(), channels_.end(),
-                                    [](const Channel &item) { return item.eof; }))
-                        QTimer::singleShot(150, this, [this] { validateCompletion(); });
+                    scheduleEofCheck();
                 }
             });
         }
@@ -206,6 +259,18 @@ public:
         observationTimer_.setSingleShot(true);
         observationTimer_.setTimerType(Qt::PreciseTimer);
         connect(&observationTimer_, &QTimer::timeout, this, [this] { finishLiveObservation(); });
+        framePump_.setTimerType(Qt::PreciseTimer);
+        connect(&framePump_, &QTimer::timeout, this, [this] { pumpFrames(); });
+        framePump_.start(10);
+    }
+
+    ~FourStreams() override
+    {
+        closeMailboxes();
+        for (Channel &channel : channels_) {
+            disconnect(channel.sink, nullptr, this, nullptr);
+            channel.player->stop();
+        }
     }
 
     void start()
@@ -277,11 +342,7 @@ protected:
         const bool exposed = observeExposure();
         for (std::size_t index = 0; index < streamCount; ++index) {
             Channel &channel = channels_[index];
-            const int column = static_cast<int>(index % 2);
-            const int row = static_cast<int>(index / 2);
-            const QRect tile(column * width() / 2, row * height() / 2,
-                             width() / 2, height() / 2);
-            const QRect content = tile.adjusted(4, 28, -4, -4);
+            const QRect tile = tileRect(index);
             painter.setPen(Qt::white);
             painter.drawText(tile.adjusted(8, 2, -8, -2), Qt::AlignLeft | Qt::AlignTop,
                              QStringLiteral("%1: %2  frames %3 / paints %4")
@@ -290,11 +351,7 @@ protected:
                              .arg(channel.delivered).arg(channel.painted));
             if (channel.image.isNull())
                 continue;
-            const QSize fitted = channel.image.size().scaled(content.size(), Qt::KeepAspectRatio);
-            const QRect destination(content.center().x() - fitted.width() / 2,
-                                    content.center().y() - fitted.height() / 2,
-                                    fitted.width(), fitted.height());
-            painter.drawImage(destination, channel.image);
+            painter.drawImage(imageRect(index, channel.presentationSize), channel.image);
             if (exposed && !done_ && channel.paintedGeneration != channel.delivered) {
                 const qint64 now = elapsedUs();
                 channel.paintedGeneration = channel.delivered;
@@ -318,6 +375,150 @@ protected:
 
 private:
     qint64 elapsedUs() const { return clock_.nsecsElapsed() / 1000; }
+
+    QRect tileRect(std::size_t index) const
+    {
+        return QRect(static_cast<int>(index % 2) * width() / 2,
+                     static_cast<int>(index / 2) * height() / 2, width() / 2, height() / 2);
+    }
+
+    QRect imageRect(std::size_t index, QSize source) const
+    {
+        const QRect content = tileRect(index).adjusted(4, 28, -4, -4);
+        const QSize fitted = source.scaled(content.size(), Qt::KeepAspectRatio);
+        return QRect(content.center().x() - fitted.width() / 2,
+                     content.center().y() - fitted.height() / 2, fitted.width(), fitted.height());
+    }
+
+    bool mailboxesEmpty() const
+    {
+        return std::all_of(channels_.cbegin(), channels_.cend(), [](const Channel &channel) {
+            const std::lock_guard<std::mutex> lock(channel.mailbox->mutex);
+            return channel.mailbox->frames.empty();
+        });
+    }
+
+    void scheduleEofCheck()
+    {
+        if (done_ || config_.liveMs != 0 || eofCheckPending_ || !mailboxesEmpty()
+                || !std::all_of(channels_.cbegin(), channels_.cend(),
+                                [](const Channel &channel) { return channel.eof; }))
+            return;
+        eofCheckPending_ = true;
+        QTimer::singleShot(150, this, [this] {
+            eofCheckPending_ = false;
+            if (!done_ && mailboxesEmpty())
+                validateCompletion();
+        });
+    }
+
+    void pumpFrames()
+    {
+        for (std::size_t index = 0; index < streamCount && !done_; ++index) {
+            QVideoFrame frame;
+            {
+                FrameMailbox &mailbox = *channels_[index].mailbox;
+                const std::lock_guard<std::mutex> lock(mailbox.mutex);
+                if (mailbox.frames.empty())
+                    continue;
+                frame = std::move(mailbox.frames.front());
+                mailbox.frames.pop_front();
+                ++mailbox.dequeued;
+            }
+            receive(index, frame);
+        }
+        scheduleEofCheck();
+    }
+
+    void closeMailboxes()
+    {
+        framePump_.stop();
+        for (Channel &channel : channels_) {
+            channel.mailbox->accepting.store(false);
+            const std::lock_guard<std::mutex> lock(channel.mailbox->mutex);
+            channel.mailbox->discardedOnStop += static_cast<qint64>(channel.mailbox->frames.size());
+            channel.mailbox->frames.clear();
+        }
+    }
+
+    QImage displayImage(std::size_t index, QVideoFrame &frame, QString &error)
+    {
+        Channel &channel = channels_[index];
+        const auto format = frame.surfaceFormat();
+        const QSize target = imageRect(index, frame.size()).size();
+        if (config_.qtConversion || frame.pixelFormat() != QVideoFrameFormat::Format_YUV420P
+                || frame.handleType() != QVideoFrame::NoHandle || target.isEmpty()
+                || format.colorSpace() != QVideoFrameFormat::ColorSpace_BT709
+                || format.colorRange() != QVideoFrameFormat::ColorRange_Video
+                || format.colorTransfer() != QVideoFrameFormat::ColorTransfer_BT709
+                || format.scanLineDirection() != QVideoFrameFormat::TopToBottom
+                || format.viewport() != QRect(QPoint(0, 0), frame.size())
+                || format.rotation() != QtVideo::Rotation::None || format.isMirrored()
+                || frame.rotation() != QtVideo::Rotation::None || frame.mirrored()) {
+            QImage image = frame.toImage();
+            if (!image.isNull())
+                ++channel.qtImageFrames;
+            channel.presentationSize = image.size();
+            return image;
+        }
+        error = QStringLiteral("Cannot map, allocate or scale the display frame");
+        if (!frame.map(QVideoFrame::ReadOnly))
+            return {};
+        const auto unmap = [](QVideoFrame *value) { value->unmap(); };
+        const std::unique_ptr<QVideoFrame, decltype(unmap)> mapping(&frame, unmap);
+        if (frame.planeCount() != 3 || frame.width() <= 0 || frame.height() <= 0)
+            return {};
+        if (!channel.scalingInput || channel.scalingInput->width != frame.width()
+                || channel.scalingInput->height != frame.height()) {
+            channel.scalingInput.reset(av_frame_alloc());
+            if (!channel.scalingInput)
+                return {};
+            AVFrame &input = *channel.scalingInput;
+            input.width = frame.width(); input.height = frame.height(); input.format = AV_PIX_FMT_YUV420P;
+            if (av_frame_get_buffer(&input, 0) < 0) {
+                channel.scalingInput.reset();
+                return {};
+            }
+            std::memset(input.buf[0]->data, 0, input.buf[0]->size);
+        }
+        AVFrame &input = *channel.scalingInput;
+        for (int plane = 0; plane < 3; ++plane) {
+            const int columns = plane == 0 ? frame.width() : frame.width() / 2 + frame.width() % 2;
+            const int rows = plane == 0 ? frame.height() : frame.height() / 2 + frame.height() % 2;
+            const int stride = frame.bytesPerLine(plane);
+            if (!frame.bits(plane) || stride < columns
+                    || static_cast<qint64>(frame.mappedBytes(plane)) < static_cast<qint64>(stride) * (rows - 1) + columns)
+                return {};
+            for (int row = 0; row < rows; ++row)
+                std::memcpy(input.data[plane] + static_cast<qint64>(row) * input.linesize[plane],
+                            frame.bits(plane) + static_cast<qint64>(row) * stride, static_cast<std::size_t>(columns));
+        }
+        input.color_range = AVCOL_RANGE_MPEG; input.colorspace = AVCOL_SPC_BT709;
+        input.color_primaries = AVCOL_PRI_BT709; input.color_trc = AVCOL_TRC_BT709;
+        QImage image(target, QImage::Format_RGB32);
+        std::unique_ptr<AVFrame, AvFrameDeleter> output(av_frame_alloc());
+        if (image.isNull() || !output || image.bytesPerLine() > std::numeric_limits<int>::max())
+            return {};
+        output->width = target.width(); output->height = target.height(); output->format = AV_PIX_FMT_RGB32;
+        output->data[0] = image.bits(); output->linesize[0] = static_cast<int>(image.bytesPerLine());
+        output->color_range = AVCOL_RANGE_JPEG; output->colorspace = AVCOL_SPC_RGB;
+        output->color_primaries = AVCOL_PRI_BT709; output->color_trc = AVCOL_TRC_BT709;
+        if (!channel.scaler) {
+            channel.scaler.reset(sws_alloc_context());
+            if (!channel.scaler)
+                return {};
+            channel.scaler->scaler = SWS_SCALE_BILINEAR;
+            channel.scaler->threads = 1;
+        }
+        const int status = sws_scale_frame(channel.scaler.get(), output.get(), &input);
+        if (status < 0) {
+            error = QStringLiteral("libswscale display conversion failed (%1)").arg(status);
+            return {};
+        }
+        ++channel.swscaleFrames;
+        channel.presentationSize = frame.size();
+        return image;
+    }
 
     bool observeExposure()
     {
@@ -446,6 +647,7 @@ private:
         QVideoFrame frame(input);
         int frameId = -1;
         if (config_.fixture.enabled()) {
+            const qint64 verificationStart = elapsedUs();
             QString error;
             if (!verifyFixture(index, frame, frameId, error)) {
                 finish(6, QStringLiteral("Stream %1: %2")
@@ -459,6 +661,7 @@ private:
             channel.seen[static_cast<std::size_t>(frameId)] = true;
             channel.lastFrameId = frameId;
             ++channel.pixelChecks;
+            channel.verificationUs += elapsedUs() - verificationStart;
         }
         const qint64 pts = frame.startTime();
         if (pts < 0) {
@@ -474,9 +677,12 @@ private:
         if (channel.delivered != 0
                 && (channel.sourceSize != frame.size() || channel.format != frame.pixelFormat()))
             ++channel.formatChanges;
-        QImage image = frame.toImage();
+        const qint64 conversionStart = elapsedUs();
+        QString conversionError;
+        QImage image = displayImage(index, frame, conversionError);
+        channel.conversionUs += elapsedUs() - conversionStart;
         if (image.isNull()) {
-            finish(6, QStringLiteral("QVideoFrame::toImage returned an empty image"));
+            finish(6, conversionError.isEmpty() ? QStringLiteral("QVideoFrame::toImage returned an empty image") : conversionError);
             return;
         }
         channel.image = std::move(image);
@@ -614,6 +820,9 @@ private:
                       ? observationEndUs_ - observationStartUs_ : 0);
         result.insert(QStringLiteral("four_players_playing_overlap_us"), overlapUs_);
         result.insert(QStringLiteral("full_pixel_verification"), config_.fixture.enabled());
+        result.insert(QStringLiteral("force_qt_conversion"), config_.qtConversion);
+        result.insert(QStringLiteral("libswscale_version"), static_cast<qint64>(swscale_version()));
+        result.insert(QStringLiteral("frame_mailbox_capacity_per_stream"), 8);
         result.insert(QStringLiteral("require_all_fixture_frames"), config_.requireAll);
         result.insert(QStringLiteral("fixture_nominal_fps"), config_.fixture.fps);
         result.insert(QStringLiteral("fps_definition"), QStringLiteral("(observed_count-1)/(last_observation-first_observation), wall seconds"));
@@ -656,10 +865,33 @@ private:
             item.insert(QStringLiteral("height"), channel.sourceSize.height());
             item.insert(QStringLiteral("pixel_format"), static_cast<int>(channel.format));
             item.insert(QStringLiteral("frame_handle_type"), static_cast<int>(channel.handleType));
+            item.insert(QStringLiteral("libswscale_viewport_frames"), channel.swscaleFrames);
+            item.insert(QStringLiteral("qt_to_image_frames"), channel.qtImageFrames);
+            item.insert(QStringLiteral("display_conversion"), channel.swscaleFrames > 0
+                        ? (channel.qtImageFrames > 0 ? QStringLiteral("mixed")
+                           : QStringLiteral("libswscale-bilinear-bt709-video-yuv420p-to-viewport-rgb32"))
+                        : (channel.qtImageFrames > 0 ? QStringLiteral("qt-to-image") : QStringLiteral("none")));
+            item.insert(QStringLiteral("display_image_width"), channel.image.width());
+            item.insert(QStringLiteral("display_image_height"), channel.image.height());
+            item.insert(QStringLiteral("verification_wall_us"), channel.verificationUs);
+            item.insert(QStringLiteral("conversion_wall_us"), channel.conversionUs);
+            {
+                const FrameMailbox &mailbox = *channel.mailbox;
+                const std::lock_guard<std::mutex> lock(channel.mailbox->mutex);
+                const auto span = std::chrono::duration_cast<std::chrono::microseconds>(mailbox.lastSignal - mailbox.firstSignal).count();
+                item.insert(QStringLiteral("sink_frame_notifications"), mailbox.signals);
+                item.insert(QStringLiteral("sink_valid_frame_notifications"), mailbox.validSignals);
+                item.insert(QStringLiteral("sink_invalid_frame_notifications"), mailbox.invalidSignals);
+                item.insert(QStringLiteral("sink_signal_span_us"), static_cast<qint64>(span));
+                item.insert(QStringLiteral("mailbox_dequeued_frames"), mailbox.dequeued);
+                item.insert(QStringLiteral("mailbox_coalesced_frames"), mailbox.coalesced);
+                item.insert(QStringLiteral("mailbox_discarded_on_stop"), mailbox.discardedOnStop);
+                item.insert(QStringLiteral("mailbox_peak_frames"), static_cast<qint64>(mailbox.peak));
+            }
             item.insert(QStringLiteral("delivered_frames"), channel.delivered);
             item.insert(QStringLiteral("painted_distinct_frames"), channel.painted);
             item.insert(QStringLiteral("delivered_not_painted_frames"), channel.delivered - channel.painted);
-            item.insert(QStringLiteral("invalid_frame_notifications"), channel.invalidFrames);
+            item.insert(QStringLiteral("invalid_frame_notifications"), channel.invalidFrames + channel.mailbox->invalidSignals);
             item.insert(QStringLiteral("format_changes"), channel.formatChanges);
             item.insert(QStringLiteral("first_delivery_us"), channel.firstDeliveryUs);
             item.insert(QStringLiteral("last_delivery_us"), channel.lastDeliveryUs);
@@ -708,6 +940,7 @@ private:
         if (done_)
             return;
         done_ = true;
+        closeMailboxes();
         const qint64 wallUs = elapsedUs();
         if (observationStartUs_ >= 0 && observationEndUs_ < 0)
             observationEndUs_ = wallUs;
@@ -753,8 +986,10 @@ private:
         if (std::fwrite(json.constData(), 1, bytes, stdout) != bytes)
             code = 2;
         std::fflush(stdout);
-        for (Channel &channel : channels_)
+        for (Channel &channel : channels_) {
+            disconnect(channel.sink, nullptr, this, nullptr);
             channel.player->stop();
+        }
         QCoreApplication::exit(code);
     }
 
@@ -763,6 +998,7 @@ private:
     QElapsedTimer clock_;
     QTimer exposureTimer_;
     QTimer observationTimer_;
+    QTimer framePump_;
     QFile csv_;
     rusage baseline_{};
     qint64 firstExposureUs_ = -1;
@@ -775,6 +1011,7 @@ private:
     bool done_ = false;
     bool ioFailed_ = false;
     bool outputReady_ = false;
+    bool eofCheckPending_ = false;
 };
 
 bool parseSize(const QString &text, int &width, int &height)
@@ -828,7 +1065,9 @@ int main(int argc, char **argv)
         QStringLiteral("WIDTHxHEIGHT:FRAMES:FPS"));
     const QCommandLineOption requireAll(QStringList{QStringLiteral("require-all-frames")},
         QStringLiteral("Fail if any expected fixture frame does not reach QVideoSink."));
-    parser.addOptions({accept, timeout, live, size, fixture, requireAll});
+    const QCommandLineOption qtConversion(QStringList{QStringLiteral("qt-conversion")},
+        QStringLiteral("Use Qt toImage for every frame instead of viewport-sized libswscale conversion."));
+    parser.addOptions({accept, timeout, live, size, fixture, requireAll, qtConversion});
     parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Four distinct readable media files."),
                                  QStringLiteral("FILE0 FILE1 FILE2 FILE3"));
     parser.process(app);
@@ -836,6 +1075,7 @@ int main(int argc, char **argv)
     if (paths.size() != static_cast<qsizetype>(streamCount))
         parser.showHelp(2);
     Configuration config;
+    config.qtConversion = parser.isSet(qtConversion);
     for (std::size_t index = 0; index < streamCount; ++index)
         config.paths[index] = QFileInfo(paths[static_cast<qsizetype>(index)]).absoluteFilePath();
     if (parser.isSet(accept)) {

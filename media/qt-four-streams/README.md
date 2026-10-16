@@ -1,11 +1,12 @@
 # Four Qt Multimedia streams
 
 This C++17 example uses four real `QMediaPlayer` and `QVideoSink` pairs.
-Each sink supplies decoded `QVideoFrame` objects.
-The application calls `QVideoFrame::toImage()` and paints four images in one
+Each sink supplies decoded `QVideoFrame` objects through a bounded mailbox.
+The application converts actual decoded pixels and paints four images in one
 `QWidget` window with `QPainter`. This display path does not require OpenGL.
 Use the current shared EmberBSD Qt 6.12 and FFmpeg providers.
 Select a software decoder in the multimedia backend configuration.
+The viewer also links the current FFmpeg9 `libswscale` and `libavutil` APIs.
 
 ## Build and run
 
@@ -17,6 +18,9 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
 cmake --build build -j2
 DESTDIR="$STAGE" cmake --install build
 ```
+
+The toolchain must select the target `pkg-config` metadata for FFmpeg9.
+For a native build, select the matching native FFmpeg9 metadata instead.
 
 Run the installed program on a display with four different local files:
 
@@ -30,6 +34,32 @@ All players start together. The program exits when all four report
 `EndOfMedia`. A player error, invalid input or early window close fails.
 Four different canonical file paths are required.
 No audio output is attached.
+
+For SDR YUV420P frames with explicit BT.709 transfer, matrix and video range,
+the default CPU path scales luma and chroma to the actual image rectangle
+before RGB conversion. It uses the current public `sws_scale_frame()` API,
+bilinear scaling and one scaling thread per channel.
+The full-resolution decode and optional full-pixel oracle stay unchanged.
+A cached padded YUV buffer copies only actual mapped pixels: Qt does not
+guarantee the extra plane padding required by libswscale's SIMD readers.
+The output is a viewport-sized native RGB32 `QImage`.
+
+Other formats, HDR, cropped or transformed frames use Qt `toImage()`.
+`--qt-conversion` forces that path for a conversion-only comparison.
+The report records both actual conversion counts, the final image dimensions,
+the loaded libswscale version, and verification/conversion wall microseconds.
+It makes no performance claim until the selected target has been measured.
+
+Sink notifications enter a mutex-protected mailbox of at most eight frames
+per channel. A precise GUI timer processes at most one frame per channel
+every ten milliseconds. Producer callbacks access no widgets or GUI state.
+An overflowing mailbox drops its oldest frame and records the coalescence.
+Processed frames retain their actual timestamps and pixels; strict fixture
+acceptance still fails when any expected ID is absent.
+EOF validation waits for the bounded mailboxes to drain and paint requests
+to settle, within the existing overall timeout.
+The report separates sink notifications, dequeued frames, coalescences,
+frames discarded on shutdown and each mailbox's peak occupancy.
 
 ## Finite acceptance mode
 
@@ -107,13 +137,15 @@ The existing CPU and interval FPS measurements cover the measured viewer run,
 including player startup. They do not become live-window-only measurements.
 RSS remains the process lifetime peak.
 
-`frames.csv` contains one row per valid sink delivery and one per distinct
+`frames.csv` contains one row per valid processed sink frame and one per distinct
 image painted while the window is exposed. A paint row refers to the latest
 delivery number and source timestamp. The application does not invent frames
 for decoder, sink or paint drops. Invalid frame notifications are counted
 separately. Source timestamps are in microseconds, as reported by Qt.
 
 Delivery and paint rates use `(count-1)/(last-first)` wall seconds.
+Delivery timestamps measure GUI processing after bounded handoff.
+`sink_signal_span_us` measures the actual producer notification interval.
 These are observed application rates, not advertised media rates or decoder
 throughput alone. CPU uses `getrusage(RUSAGE_SELF)` user plus system time over
 the same measured wall interval. One fully used CPU core equals 100 percent.
