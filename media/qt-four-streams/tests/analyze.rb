@@ -182,6 +182,16 @@ begin
                          [compiler, *arguments, '-E', '-dM'], entry['directory'])
     summary['checks'] << macros
     raise "Actual macro capture failed for #{entry['name']}" unless macros['success']
+    raise "Cannot identify the actual source argument: #{entry['file']}" unless arguments.include?(entry['file'])
+    language = entry['name'].end_with?('.cpp') ? 'c++' : 'c'
+    builtins = run_command(output, "#{tag}-compiler-builtins",
+                           [compiler, *arguments.reject { |argument| argument == entry['file'] },
+                            '-x', language, '-E', '-dM', '/dev/null'], entry['directory'])
+    summary['checks'] << builtins
+    raise "Actual builtin macro capture failed for #{entry['name']}" unless builtins['success']
+    entry['compiler_builtins'] = File.join(output, "#{tag}-compiler-builtins.h")
+    File.binwrite(entry['compiler_builtins'], File.binread(File.join(output, "#{tag}-compiler-builtins.stdout")))
+    entry['compiler_builtins_sha256'] = Digest::SHA256.file(entry['compiler_builtins']).hexdigest
     entry['context_sha256'] = Digest::SHA256.file(context).hexdigest
   end
   summary['contexts'] = selected.map { |entry| entry.reject { |key, _| key == 'original' } }
@@ -199,14 +209,47 @@ begin
     imported_path = File.join(output, "#{tag}-cppcheck-commands.json")
     save_json(imported_path, [imported])
     checked = run_command(output, "#{tag}-cppcheck",
-                          [cppcheck, "--project=#{imported_path}", '--enable=all', '--inconclusive',
+                          [cppcheck, "--project=#{imported_path}", "--include=#{entry['compiler_builtins']}", '--enable=all', '--inconclusive',
                            '--check-level=exhaustive', '--error-exitcode=1', '--xml', '--xml-version=2'], build)
     summary['checks'] << checked
-    checked['derived_database_reason'] = 'Cppcheck2.17 does not import -isystem directories; use identical observed paths as -I for this tool only.'
+    checked['derived_database_reason'] = 'Cppcheck2.17 does not import -isystem directories; use identical observed paths as -I for this tool only. Import actual GCC16 builtin macros to retain native architecture and byte order.'
     checked['original_database'] = 'compile_commands.original.json'
     findings, metadata = cppcheck_findings(File.join(output, "#{tag}-cppcheck.stderr"))
     checked['findings'] = findings
     checked['checker_metadata'] = metadata
+    checked['coverage'] = if findings.any? { |finding| finding['severity'] == 'error' }
+      'blocked-before-complete-translation-unit-analysis'
+    else
+      'translation-unit-analysis-completed'
+    end
+    # Real header-only controls separate inherited parser/model gaps from the
+    # application. Both controls use the actual compiler flags and headers.
+    header = entry['name'].end_with?('.cpp') ? 'QtCore/qtypes.h' : 'stdio.h'
+    extension = entry['name'].end_with?('.cpp') ? 'cpp' : 'c'
+    baseline = File.join(output, "#{tag}-header-control.#{extension}")
+    File.write(baseline, "#include <#{header}>\n")
+    baseline_arguments = entry['clean_arguments'].map { |argument| argument == entry['file'] ? baseline : argument }
+    compiler_control = run_command(output, "#{tag}-header-control-compiler",
+                                   [entry['arguments'].first, *baseline_arguments, '-fsyntax-only'], entry['directory'])
+    summary['checks'] << compiler_control
+    baseline_imported = { 'directory' => entry['directory'], 'file' => baseline,
+                          'arguments' => cppcheck_arguments.map { |argument| argument == entry['file'] ? baseline : argument } }
+    baseline_database = File.join(output, "#{tag}-header-control-commands.json")
+    save_json(baseline_database, [baseline_imported])
+    header_checked = run_command(output, "#{tag}-header-control-cppcheck",
+                                 [cppcheck, "--project=#{baseline_database}", "--include=#{entry['compiler_builtins']}",
+                                  '--enable=all', '--inconclusive', '--check-level=exhaustive',
+                                  '--error-exitcode=1', '--xml', '--xml-version=2'], build)
+    summary['checks'] << header_checked
+    header_findings, header_metadata = cppcheck_findings(File.join(output, "#{tag}-header-control-cppcheck.stderr"))
+    header_checked['findings'] = header_findings
+    header_checked['checker_metadata'] = header_metadata
+    checked['header_control'] = header
+    findings.each do |finding|
+      finding['reproduced_in_header_control'] = header_findings.any? do |other|
+        other.values_at('id', 'message', 'locations') == finding.values_at('id', 'message', 'locations')
+      end
+    end
   end
   c_entry = selected.find { |entry| entry['name'] == 'i420-fixture.c' }
   gcc = run_command(output, 'gcc16-analyzer',

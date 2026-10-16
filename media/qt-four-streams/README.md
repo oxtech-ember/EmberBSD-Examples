@@ -155,6 +155,24 @@ Without that option, missing IDs remain visible in the report.
 The nominal frame rate labels the fixture; it never replaces observed rates.
 Full-pixel verification adds CPU work and can affect scheduling.
 
+## Checks
+
+`tests/check-fixtures.rb FFMPEG FFPROBE FIXTURES NEW_OUT` decodes each encoded
+file and compares every output byte with the generator's streaming hash.
+It also checks the actual codec, dimensions, frame count and timestamps.
+
+`tests/negative.rb VIEWER FIXTURES WIDTHxHEIGHT:FRAMES:FPS NEW_OUT` runs the real
+viewer with exchanged channels, a truncated file, a missing file and an
+existing output directory. Set `MEMCHECK=yes` to check these refusal paths
+with Valgrind. Set `QT_QPA_FONTDIR` to the selected licensed font directory.
+
+`tests/analyze.rb SOURCE BUILD NEW_OUT` imports the actual native GCC16
+compilation database for the viewer and generator. It runs Cppcheck,
+GCC's C analyzer and Clang's C++ analyzer. `CPPCHECK` can select a current
+Cppcheck executable. The output keeps raw diagnostics and header-only
+controls. A header parser failure remains a nonzero coverage limitation.
+It is not a clean source analysis result.
+
 This source has no hardware decoder, GPU, audio, camera, network receiver or
 long-duration acceptance claim. Record the target, backend, display transport,
 fixture hashes and observed measurements with each real execution.
