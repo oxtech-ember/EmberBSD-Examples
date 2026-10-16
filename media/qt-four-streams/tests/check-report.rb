@@ -64,6 +64,7 @@ begin
     id = stream.fetch('stream')
     prefix = "stream #{id}: "
     check.call(stream.fetch('eof') == true && stream.fetch('media_status') == 'EndOfMedia', prefix + 'Missing actual EOF')
+    check.call(stream.fetch('video_codec_metadata') == 'H265', prefix + 'Expected actual H265 codec metadata')
     check.call(stream.fetch('player_error_text') == '', prefix + 'Player error text')
     %w[player_error equal_pts regressing_pts missing_pts mailbox_coalesced_frames mailbox_discarded_on_stop fixture_missing_frames delivered_not_painted_frames].each do |key|
       check.call(stream.fetch(key) == 0, prefix + key + ' must be zero')
