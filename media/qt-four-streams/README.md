@@ -35,6 +35,12 @@ All players start together. The program exits when all four report
 Four different canonical file paths are required.
 No audio output is attached.
 
+`--ffmpeg-cpu-count N` accepts 1..64 and sets FFmpeg's process-wide CPU-count
+hint before player creation. Automatic thread pools use this hint;
+it does not change the machine's physical CPU count.
+The default has no override. The report records the requested hint
+(zero means no override) and the effective `av_cpu_count()` value.
+
 For SDR YUV420P frames with explicit BT.709 transfer, matrix and video range,
 the default CPU path scales luma and chroma to the actual image rectangle
 before RGB conversion. It uses the current public `sws_scale_frame()` API,

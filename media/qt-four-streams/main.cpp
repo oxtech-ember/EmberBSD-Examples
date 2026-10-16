@@ -41,6 +41,7 @@
 #include <sys/resource.h>
 
 extern "C" {
+#include <libavutil/cpu.h>
 #include <libavutil/frame.h>
 #include <libswscale/swscale.h>
 }
@@ -73,6 +74,7 @@ struct Configuration {
     bool requireAll = false;
     bool qtConversion = false;
     SwsScaler scalingFilter = SWS_SCALE_POINT;
+    int ffmpegCpuCountHint = 0;
 };
 
 QString scalingFilterName(SwsScaler filter)
@@ -832,6 +834,8 @@ private:
         result.insert(QStringLiteral("four_players_playing_overlap_us"), overlapUs_);
         result.insert(QStringLiteral("full_pixel_verification"), config_.fixture.enabled());
         result.insert(QStringLiteral("force_qt_conversion"), config_.qtConversion);
+        result.insert(QStringLiteral("ffmpeg_global_autothread_cpu_count_hint_requested"), config_.ffmpegCpuCountHint);
+        result.insert(QStringLiteral("ffmpeg_global_autothread_cpu_count_hint_effective"), av_cpu_count());
         result.insert(QStringLiteral("libswscale_requested_filter"), scalingFilterName(config_.scalingFilter));
         result.insert(QStringLiteral("libswscale_version"), static_cast<qint64>(swscale_version()));
         result.insert(QStringLiteral("frame_mailbox_capacity_per_stream"), static_cast<qint64>(frameMailboxCapacity));
@@ -1085,7 +1089,10 @@ int main(int argc, char **argv)
     const QCommandLineOption scalingFilter(QStringList{QStringLiteral("scaling-filter")},
         QStringLiteral("libswscale display filter: point or bilinear. Default: point."),
         QStringLiteral("filter"), QStringLiteral("point"));
-    parser.addOptions({accept, timeout, live, size, fixture, requireAll, qtConversion, scalingFilter});
+    const QCommandLineOption ffmpegCpuCount(QStringList{QStringLiteral("ffmpeg-cpu-count")},
+        QStringLiteral("Set FFmpeg's global CPU-count hint for automatic thread pools (1..64). Default: no override."),
+        QStringLiteral("count"));
+    parser.addOptions({accept, timeout, live, size, fixture, requireAll, qtConversion, scalingFilter, ffmpegCpuCount});
     parser.addPositionalArgument(QStringLiteral("files"), QStringLiteral("Four distinct readable media files."),
                                  QStringLiteral("FILE0 FILE1 FILE2 FILE3"));
     parser.process(app);
@@ -1132,6 +1139,16 @@ int main(int argc, char **argv)
                 || config.timeoutMs <= config.liveMs || config.requireAll)
             parser.showHelp(2);
     }
+    if (parser.isSet(ffmpegCpuCount)) {
+        const QString value = parser.value(ffmpegCpuCount);
+        bool ok = false;
+        config.ffmpegCpuCountHint = value.toInt(&ok);
+        if (!QRegularExpression(QStringLiteral("\\A[0-9]+\\z")).match(value).hasMatch()
+                || !ok || config.ffmpegCpuCountHint < 1 || config.ffmpegCpuCountHint > 64)
+            parser.showHelp(2);
+    }
+    if (config.ffmpegCpuCountHint > 0)
+        av_cpu_force_count(config.ffmpegCpuCountHint);
     FourStreams window(std::move(config));
     QTimer::singleShot(0, &window, [&window] { window.start(); });
     return app.exec();
