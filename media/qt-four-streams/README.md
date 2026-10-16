@@ -99,7 +99,8 @@ arrays and both subprocess exit statuses. Failed outputs remain marked failed.
 Independently decode and inspect the files before using them as acceptance inputs.
 
 ```sh
-QT_MEDIA_BACKEND=ffmpeg qt-four-streams --accept results \
+QT_FFMPEG_DECODING_HW_DEVICE_TYPES=, QT_MEDIA_BACKEND=ffmpeg \
+qt-four-streams --accept results \
     --timeout-ms 60000 --verify-fixtures 2048x1500:36:9 \
     --require-all-frames \
     fixtures/channel0.mp4 fixtures/channel1.mp4 \
@@ -162,6 +163,8 @@ Memory is the process peak resident set, not a per-stream allocation total.
 The report converts NetBSD and Linux `ru_maxrss` KiB to bytes.
 Startup, conversion, drawing and optional pixel checks contribute to these
 application measurements. Snapshot and report serialization happen afterward.
+The measured interval starts in the viewer constructor, after QApplication
+initialization. Guest CPU accounting excludes the emulator's host overhead.
 
 ## Optional deterministic fixture oracle
 
@@ -222,6 +225,25 @@ Cppcheck executable. The output keeps raw diagnostics and header-only
 controls. A header parser failure remains a nonzero coverage limitation.
 It is not a clean source analysis result.
 
-This source has no hardware decoder, GPU, audio, camera, network receiver or
+## Recorded validation
+
+The [Ports results](https://github.com/oxtech-ember/EmberBSD-Ports/blob/main/profiles/common-media/qt-four-streams/results.md)
+record the GCC16 cross SDK and actual installed EmberBSD amd64 run.
+Four H.265 inputs each contain 180 lossless 2048×1500 frames at 9 fps.
+All 720 frames are decoded, verified and painted in a 640×480 raster window.
+Observed target paint rates are 9.114–9.326 fps, with zero mailbox drops.
+The process uses 372.55% of one guest core and peaks at 262.5 MiB RSS
+in four-vCPU, 2 GiB QEMU TCG. The selected command adds
+`--window-size 640x480 --ffmpeg-cpu-count 1` to the strict fixture run.
+Both 36-frame package lifecycle runs also verify and paint every frame.
+All three phases have different actual full-window RFB snapshots.
+
+Native positive and four refusal paths pass Memcheck with zero errors
+and zero definite, indirect or possible leaks. GCC16's C analyzer and
+Clang19's full viewer analysis report no diagnostics. Cppcheck2.22's actual
+GCC16 header parser/model limitations remain recorded, without task suppressions.
+See the linked results for the controls and precise coverage boundaries.
+
+This source has no hardware decoder, GPU, audio, camera, Qt network-input or
 long-duration acceptance claim. Record the target, backend, display transport,
 fixture hashes and observed measurements with each real execution.
