@@ -53,6 +53,65 @@ Record the actual host backend and device settings; the Metal presentation
 window alone does not establish acceleration. An inaccessible render node
 is a failed GPU check, not an invitation to widen CREATE_DUMB permissions.
 
+## Zink shader and pbuffer check
+
+Use the current common Mesa package with Zink. Select one Vulkan ICD manifest.
+First run the Ports PowerVR enumeration check against that manifest and the
+selected render node. Require the hardware vendor, open-source PowerVR driver
+ID and render-node identity. Record the manifest and loaded library hashes.
+This EGL check does not replace that Vulkan identity check.
+
+Build the existing consumer with the common GCC16 cross compiler. Use the
+application sysroot that supplies the target EGL, GLES2 and GBM headers and
+libraries. Do not use host library paths.
+
+```sh
+"$CC" --sysroot="$SYSROOT" -std=c99 -D_NETBSD_SOURCE -Wall -Wextra -Werror \
+  -I"$SYSROOT/usr/pkg/include" egl-readback.c \
+  -L"$SYSROOT/usr/pkg/lib" -Wl,-rpath-link,"$SYSROOT/usr/pkg/lib" \
+  -Wl,-rpath,/usr/pkg/lib -lEGL -lGLESv2 -lgbm -o "$OUTPUT"
+```
+
+Set `CC` to the GCC16 target compiler. Set `SYSROOT` to the application sysroot.
+Set `OUTPUT` to a new target output file. Record the compiler version and hashes.
+The native `build-probe.sh` interface remains available for its original case.
+
+On the target, use the exact device name from the accepted Vulkan check:
+
+```sh
+unset LIBGL_ALWAYS_SOFTWARE VK_ICD_FILENAMES VK_ADD_DRIVER_FILES
+unset VK_ADDITIONAL_DRIVER_FILES
+VK_DRIVER_FILES="$ICD_MANIFEST" MESA_LOADER_DRIVER_OVERRIDE=zink \
+  GALLIUM_DRIVER=zink ./egl-readback --zink "$VULKAN_DEVICE_NAME" ./zink.ppm
+```
+
+Use a new image path. The consumer refuses an existing file. It requires one
+absolute `VK_DRIVER_FILES` path. It rejects conflicting legacy ICD settings
+and software overrides. It requires Zink and the expected device name in
+`GL_RENDERER`. It rejects llvmpipe, softpipe, lavapipe and SwiftShader names.
+Keep the ICD and library cohort unchanged between enumeration and rendering.
+Record actual loaded library paths during hardware acceptance.
+
+The check creates an EGL surfaceless display and a 64 by 64 pbuffer. It compiles
+and links GLES2 shaders. It draws four quadrants and checks every RGBA channel
+against an independent colour pattern. It saves the checked pbuffer as a PPM
+image. It then repeats shader drawing and readback over 64 texture/FBO pairs.
+A final success requires context, surface and display cleanup. This check does
+not establish KMS scanout, dma-buf sharing, synchronization or a Plasma session.
+
+Run the pure renderer and pixel contracts on the host:
+
+```sh
+"$HOST_CC" -std=c99 -Wall -Wextra -Werror -fsanitize=address,undefined \
+  tests/readback-checks.c -o "$TEST_OUTPUT"
+"$TEST_OUTPUT"
+```
+
+These contracts reject software identities and corrupted or stale images.
+They do not execute a GPU. Check the actual consumer separately with Cppcheck,
+GCC `-fanalyzer` and Clang Static Analyzer using the target headers and flags.
+Record each analyzer version and its scope. Hardware execution remains required.
+
 ## GEM and PRIME lifetime probe
 
 After booting a reviewed experimental DRM kernel, first run the memory probe
