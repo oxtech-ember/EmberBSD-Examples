@@ -96,6 +96,12 @@ The check creates an EGL surfaceless display and a 64 by 64 pbuffer. It compiles
 and links GLES2 shaders. It draws four quadrants and checks every RGBA channel
 against an independent colour pattern. It saves the checked pbuffer as a PPM
 image. It then repeats shader drawing and readback over 64 texture/FBO pairs.
+The Zink modes also record the GLSL, GL and EGL extension strings.
+Use `--zink-es3` in place of `--zink` to require a real GLES3 configuration
+and context. It fails when that profile is unavailable. It does not change
+Mesa capability bits or accept a version override. A GLES2 pass does not
+establish GLES3 or the capabilities required by a compositor.
+
 A final success requires context, surface and display cleanup. This check does
 not establish KMS scanout, dma-buf sharing, synchronization or a Plasma session.
 

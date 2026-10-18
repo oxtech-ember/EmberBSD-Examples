@@ -145,7 +145,7 @@ main(int argc, char **argv)
 		EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8,
 		EGL_ALPHA_SIZE, 8, EGL_NONE
 	};
-	static const EGLint context_attributes[] = {
+	EGLint context_attributes[] = {
 		EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE
 	};
 
@@ -160,13 +160,14 @@ main(int argc, char **argv)
 	GLint color_location = -1;
 	unsigned char pixels[SIDE * SIDE * 4];
 	const char *renderer;
-	int fd = -1, software, zink, frame;
+	int fd = -1, software, zink, es3, frame;
 	size_t bad;
 
 	if (argc != 2 && argc != 4)
 		errx(2, "usage: egl-readback DRM_RENDER_NODE | --software | "
-		    "--zink EXPECTED_DEVICE_NAME NEW_PPM");
-	zink = strcmp(argv[1], "--zink") == 0;
+		    "--zink|--zink-es3 EXPECTED_DEVICE_NAME NEW_PPM");
+	es3 = strcmp(argv[1], "--zink-es3") == 0;
+	zink = es3 || strcmp(argv[1], "--zink") == 0;
 	if ((zink && argc != 4) || (!zink && argc != 2))
 		errx(2, "--zink requires the expected Vulkan device name and a new PPM");
 	software = strcmp(argv[1], "--software") == 0;
@@ -177,10 +178,17 @@ main(int argc, char **argv)
 		if (getenv("VK_ICD_FILENAMES") != NULL ||
 		    getenv("VK_ADD_DRIVER_FILES") != NULL ||
 		    getenv("VK_ADDITIONAL_DRIVER_FILES") != NULL ||
-		    getenv("LIBGL_ALWAYS_SOFTWARE") != NULL)
-			errx(1, "remove conflicting ICD and software overrides");
+		    getenv("LIBGL_ALWAYS_SOFTWARE") != NULL ||
+		    getenv("MESA_GL_VERSION_OVERRIDE") != NULL ||
+		    getenv("MESA_GLES_VERSION_OVERRIDE") != NULL ||
+		    getenv("MESA_GLSL_VERSION_OVERRIDE") != NULL)
+			errx(1, "remove conflicting ICD, software and API version overrides");
 		printf("VK_DRIVER_FILES: %s\n", icd);
 		config_attributes[1] = EGL_PBUFFER_BIT;
+		if (es3) {
+			config_attributes[3] = EGL_OPENGL_ES3_BIT_KHR;
+			context_attributes[1] = 3;
+		}
 	}
 	get_platform_display = (PFNEGLGETPLATFORMDISPLAYEXTPROC)
 	    eglGetProcAddress("eglGetPlatformDisplayEXT");
@@ -225,8 +233,22 @@ main(int argc, char **argv)
 		errx(1, "a VirGL renderer is required for the GPU check");
 
 	if (zink) {
+		const char *version = (const char *)glGetString(GL_VERSION);
+		const char *glsl = (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION);
+		const char *extensions = (const char *)glGetString(GL_EXTENSIONS);
+		const char *egl_extensions = eglQueryString(display, EGL_EXTENSIONS);
+		unsigned version_major, version_minor;
+
 		if (!readback_zink_renderer(renderer, argv[2]))
 			errx(1, "Zink on the expected hardware renderer is required");
+		if (version == NULL || glsl == NULL || extensions == NULL ||
+		    egl_extensions == NULL || glGetError() != GL_NO_ERROR)
+			errx(1, "GL/EGL capability query failed");
+		if (es3 && (sscanf(version, "OpenGL ES %u.%u", &version_major,
+		    &version_minor) != 2 || version_major < 3))
+			errx(1, "the requested GLES3 context is unavailable");
+		printf("GLSL_VERSION: %s\nGL_EXTENSIONS: %s\nEGL_EXTENSIONS: %s\n",
+		    glsl, extensions, egl_extensions);
 		program = shader_program();
 		color_location = glGetUniformLocation(program, "color");
 		if (color_location < 0)
