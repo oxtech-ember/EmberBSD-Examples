@@ -99,6 +99,17 @@ image. It then repeats shader drawing and readback over 64 texture/FBO pairs.
 A final success requires context, surface and display cleanup. This check does
 not establish KMS scanout, dma-buf sharing, synchronization or a Plasma session.
 
+On 2026-10-18 UTC, consumer `8c1e33a` passed on one physical A733 board.
+The kernel was `e3d9ba3a344579c12ee9398ab3a3a5bc64a67b0d`.
+A private MesaLib 26.2.4nb8 payload used the existing target providers.
+The check selected the open-source PowerVR ICD and reported EGL 1.5,
+OpenGL ES 2.0 and `zink Vulkan 1.2(PowerVR B-Series BXM-4-64 MC1
+(IMAGINATION_OPEN_SOURCE_MESA))`. The pbuffer and all 64 FBO checks passed.
+An independent comparison matched all 4096 PPM pixels. Package installation,
+HDMI scanout, PRIME and Plasma were outside this check. The PCB revision
+was not recorded. Mesa required its explicit upstream experimental option
+`PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1`; Vulkan conformance was not established.
+
 Run the pure renderer and pixel contracts on the host:
 
 ```sh
