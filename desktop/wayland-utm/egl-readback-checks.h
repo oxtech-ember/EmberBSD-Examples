@@ -51,9 +51,10 @@ static int
 readback_pixels(const unsigned char *pixels, unsigned frame, size_t *bad)
 {
 	size_t i;
-	unsigned x, y, quadrant, expected, actual;
 
 	for (i = 0; i < SIDE * SIDE * 4; i++) {
+		unsigned x, y, quadrant, expected, actual;
+
 		x = (unsigned)(i / 4) % SIDE;
 		y = (unsigned)(i / 4) / SIDE;
 		quadrant = (y / (SIDE / 2)) * 2 + x / (SIDE / 2);

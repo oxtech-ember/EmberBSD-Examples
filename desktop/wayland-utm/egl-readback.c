@@ -26,7 +26,6 @@ egl_failure(const char *operation)
 static GLuint
 compile_shader(GLenum type, const char *source)
 {
-	char log[1024] = {0};
 	GLint status;
 	GLuint shader;
 
@@ -37,6 +36,8 @@ compile_shader(GLenum type, const char *source)
 	glCompileShader(shader);
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
 	if (!status) {
+		char log[1024] = {0};
+
 		glGetShaderInfoLog(shader, sizeof(log), NULL, log);
 		glDeleteShader(shader);
 		errx(1, "shader compilation failed: %s", log);
@@ -51,7 +52,6 @@ shader_program(void)
 	    "attribute vec2 position; void main() { gl_Position=vec4(position,0.,1.); }";
 	static const char fragment[] =
 	    "precision mediump float; uniform vec4 color; void main() { gl_FragColor=color; }";
-	char log[1024] = {0};
 	GLuint vs, fs, program;
 	GLint status;
 
@@ -68,6 +68,8 @@ shader_program(void)
 	glDeleteShader(fs);
 	glGetProgramiv(program, GL_LINK_STATUS, &status);
 	if (!status) {
+		char log[1024] = {0};
+
 		glGetProgramInfoLog(program, sizeof(log), NULL, log);
 		glDeleteProgram(program);
 		errx(1, "shader link failed: %s", log);
@@ -80,7 +82,6 @@ paint(unsigned frame, GLuint program, GLint color_location)
 {
 	static const GLfloat positions[] = {-1.f, -1.f, 1.f, -1.f, -1.f, 1.f, 1.f, 1.f};
 	unsigned quadrant;
-	const unsigned char *color;
 
 	glViewport(0, 0, SIDE, SIDE);
 	glDisable(GL_DITHER);
@@ -92,7 +93,7 @@ paint(unsigned frame, GLuint program, GLint color_location)
 	}
 	glEnable(GL_SCISSOR_TEST);
 	for (quadrant = 0; quadrant < 4; quadrant++) {
-		color = readback_colors[(quadrant + frame) % 4];
+		const unsigned char *color = readback_colors[(quadrant + frame) % 4];
 		glScissor((quadrant % 2) * (SIDE / 2),
 		    (quadrant / 2) * (SIDE / 2), SIDE / 2, SIDE / 2);
 		if (program != 0) {
