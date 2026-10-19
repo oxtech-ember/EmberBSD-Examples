@@ -36,8 +36,9 @@ struct Pipe {
     Pipe &operator=(const Pipe &) = delete;
 };
 
-bool capture(const QString &path)
+bool capture(const QString &path, int solidIndex = -1)
 {
+    if (solidIndex < -1 || solidIndex > 3) return false;
     Pipe channel;
     if (pipe(channel.fd) != 0) return false;
     for (int value : channel.fd) {
@@ -95,7 +96,8 @@ bool capture(const QString &path)
     for (int y = 0; y < height; ++y) {
         const auto *line = rgba.constScanLine(y);
         for (int x = 0; x < width; ++x) {
-            const auto &pixel = expected[(y >= height / 2 ? 2 : 0) + (x >= width / 2 ? 1 : 0)];
+            const auto &pixel = expected[solidIndex >= 0 ? solidIndex :
+                (y >= height / 2 ? 2 : 0) + (x >= width / 2 ? 1 : 0)];
             for (int c = 0; c < 3; ++c) {
                 if (line[4 * x + c] != pixel[c]) {
                     qCritical("Pixel mismatch at %d,%d channel %d: %u != %u", x, y, c,
@@ -124,7 +126,14 @@ bool capture(const QString &path)
 
 int main(int argc, char **argv)
 {
-    if (argc != 4) { std::fprintf(stderr, "usage: %s QUADRANTS_QML NEW_PPM EXPECTED_RENDERER\n", argv[0]); return 2; }
+    if (argc != 4 && argc != 5) { std::fprintf(stderr, "usage: %s QUADRANTS_QML NEW_PPM EXPECTED_RENDERER [red|green|blue|white]\n", argv[0]); return 2; }
+    int solidIndex = -1;
+    if (argc == 5) {
+        const QByteArray selected(argv[4]);
+        const std::array<QByteArray, 4> names{{"red", "green", "blue", "white"}};
+        for (int i = 0; i < 4; ++i) if (selected == names[i]) solidIndex = i;
+        if (solidIndex < 0) return 2;
+    }
     if (qEnvironmentVariableIsSet("QT_QUICK_BACKEND") || qEnvironmentVariableIsSet("MESA_GL_VERSION_OVERRIDE") ||
         qEnvironmentVariableIsSet("MESA_GLES_VERSION_OVERRIDE") || qEnvironmentVariableIsSet("MESA_GLSL_VERSION_OVERRIDE")) return 2;
     qputenv("QSG_RENDER_LOOP", "basic");
@@ -158,6 +167,7 @@ int main(int argc, char **argv)
         qCritical("Scene graph: %s", qPrintable(error)); app.exit(1);
     });
     view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setInitialProperties({{QStringLiteral("solidIndex"), solidIndex}});
     view.setSource(QUrl::fromLocalFile(QString::fromLocal8Bit(argv[1])));
     if (view.status() != QQuickView::Ready) return 1;
     view.setFlags(Qt::FramelessWindowHint);
@@ -165,7 +175,7 @@ int main(int argc, char **argv)
     view.showFullScreen();
     QTimer::singleShot(3000, &app, [&] {
         if (!hardware.load()) { qCritical("Hardware GLES client was not established"); app.exit(1); return; }
-        const bool passed = capture(QString::fromLocal8Bit(argv[2]));
+        const bool passed = capture(QString::fromLocal8Bit(argv[2]), solidIndex);
         if (!passed) qCritical("Composed frame capture failed");
         app.exit(passed ? 0 : 1);
     });

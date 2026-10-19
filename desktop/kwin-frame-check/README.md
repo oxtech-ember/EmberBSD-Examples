@@ -45,3 +45,14 @@ Descriptor ownership follows
 This source check is not physical acceptance. A successful virtual run proves
 one client and its composed frame. It does not prove HDMI scanout, input,
 long runtime stability or a complete Plasma session.
+
+Pass `red`, `green`, `blue` or `white` as the last argument to check a uniform
+frame. Run those four modes in order in one compositor session. Require a
+new output file and exit zero for each mode. This checks frame updates and all
+colour channels without texture edges. The QML colour table and C++ channel
+values remain independent. The default quadrant check stays exact.
+
+KWin can use linear texture filtering. A quadrant edge can expose sampling
+precision even when both uniform regions are correct. Do not change the
+quadrant reference to match a measured result. Report uniform-frame acceptance
+and quadrant-edge precision as separate results.
