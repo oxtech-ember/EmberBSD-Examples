@@ -29,6 +29,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [GNOME desktop in the same UTM guest](desktop/gnome-utm/README.md)
 - [Wayland client and compositor nested inside Xorg](desktop/wayland-nested/README.md)
 - [Native Wayland and VirGL runtime probes](desktop/wayland-utm/README.md)
+- [Hardware Qt Quick client and composed KWin pixel check](desktop/kwin-frame-check/README.md)
 - [Plasma Mobile source configuration probe and current blockers](desktop/plasma-mobile/README.md)
 - [Native nested Phosh session in EmberBSD Ports](https://github.com/oxtech-ember/EmberBSD-Ports/tree/main/probes/phosh)
 
