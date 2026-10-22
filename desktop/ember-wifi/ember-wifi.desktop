@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Wi-Fi
+Name[ru]=Сети Wi-Fi
+Comment=Connect to wireless networks
+Comment[ru]=Подключение к беспроводным сетям
+Exec=ember-wifi
+Icon=network-wireless
+Terminal=false
+Categories=Network;Settings;
+X-GNOME-Autostart-enabled=true

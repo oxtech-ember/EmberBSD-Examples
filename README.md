@@ -12,6 +12,8 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 
 ## Examples
 
+- [Desktop Wi-Fi manager using the supplicant control socket](desktop/ember-wifi/README.md)
+
 - [H.265 over RTP with FFmpeg and GStreamer, packet loss and receiver restart](media/h265-rtp/README.md)
 - [Four H.265 streams in a Qt Multimedia raster window, with pixel and CPU checks](media/qt-four-streams/README.md)
 - [Local text generation and speech recognition with llama.cpp and whisper.cpp](ai/local-inference/README.md)
@@ -41,10 +43,11 @@ requirements and validation limits before applying it to a system.
 [EmberBSD](https://github.com/oxtech-ember/EmberBSD#emberbsd-ecosystem) is the
 central project and the entry point for the ecosystem.
 
-- [EmberBSD](https://github.com/oxtech-ember/EmberBSD) — OS, drivers, boards and system builds.
+- [EmberBSD](https://github.com/oxtech-ember/EmberBSD) — OS subsystems, drivers, source build rules, and executable checks.
+- [EmberBSD-DevBoards](https://github.com/oxtech-ember/EmberBSD-DevBoards) — hardware, SoCs, bootloaders, layouts, and current support limits.
 - [EmberBSD-Ports](https://github.com/oxtech-ember/EmberBSD-Ports) — third-party recipes, patches and native dependencies used by examples.
 - [EmberBSD-Runtime](https://github.com/oxtech-ember/EmberBSD-Runtime) — application execution and device operations; design stage.
-- [EmberBSD-SDK](https://github.com/oxtech-ember/EmberBSD-SDK) — application contracts and development tools; design stage.
+- [EmberBSD-SDK](https://github.com/oxtech-ember/EmberBSD-SDK) — common build orchestration, sysroots, release kits, and development tools; stable application contracts remain in design.
 - [Ember-Agent-Skills](https://github.com/oxtech-ember/Ember-Agent-Skills) — portable developer skills for AI coding assistants and tested contributions.
 
 ## Connect developer skills
