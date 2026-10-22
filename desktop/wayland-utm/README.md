@@ -4,7 +4,7 @@ Experimental runtime checks for the current EmberBSD/NetBSD 11 aarch64 guest.
 Build recipes, original source URLs, hashes and portability patches belong to
 [EmberBSD Ports](https://github.com/oxtech-ember/EmberBSD-Ports/tree/main/probes/wayland-utm).
 The kernel integration belongs to
-[EmberBSD](https://github.com/oxtech-ember/EmberBSD/blob/main/ember/boot/utm-virgl-design.md).
+[EmberBSD](https://github.com/oxtech-ember/EmberBSD/blob/main/sys/external/bsd/drm2/virtio/docs/utm-virgl-design.md).
 
 ## Current evidence
 
