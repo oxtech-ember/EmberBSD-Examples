@@ -12,6 +12,8 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 
 ## Examples
 
+- [Bounded integer and floating-point CPU load](diagnostics/cpu-load/README.md)
+
 - [Desktop Wi-Fi manager using the supplicant control socket](desktop/ember-wifi/README.md)
 
 - [H.265 over RTP with FFmpeg and GStreamer, packet loss and receiver restart](media/h265-rtp/README.md)

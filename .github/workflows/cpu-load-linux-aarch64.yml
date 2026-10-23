@@ -1,0 +1,52 @@
+# Origin: EmberBSD, AI-assisted by OpenAI Codex (GPT-6).
+name: CPU load Linux AArch64 diagnostic
+'on':
+  push:
+    branches: [main]
+    paths: ['diagnostics/cpu-load/**', '.github/workflows/cpu-load-linux-aarch64.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    container:
+      image: gcc@sha256:b89e1771f0ac16e3769dd351ea8e07a6676aa690a76339c16e36c761eaaaf0f9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Prepare GCC16 and memory diagnostics
+        run: |
+          test "$(gcc -dumpfullversion)" = 16.2.0
+          test "$(uname -m)" = aarch64
+          apt-get update
+          apt-get install -y --no-install-recommends python3 valgrind libc6-dbg
+      - name: Check actual source and build static diagnostic
+        env:
+          GCC_IMAGE: gcc@sha256:b89e1771f0ac16e3769dd351ea8e07a6676aa690a76339c16e36c761eaaaf0f9
+        run: |
+          python3 diagnostics/cpu-load/check.py --work "$RUNNER_TEMP/cpu-load" \
+            --artifact "$GITHUB_WORKSPACE/cpu-load-artifact"
+      - name: Execute actual regression with Memcheck and sanitizers
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          valgrind --tool=memcheck --error-exitcode=97 --leak-check=full \
+            --show-leak-kinds=all --errors-for-leak-kinds=all --track-origins=yes \
+            "$RUNNER_TEMP/cpu-load/test" > cpu-load-artifact/memcheck.log 2>&1
+          gcc -std=c11 -O1 -g -Wall -Wextra -Werror -ffp-contract=off \
+            -D_POSIX_C_SOURCE=200809L -fsanitize=address,undefined \
+            -fno-omit-frame-pointer diagnostics/cpu-load/test.c -o "$RUNNER_TEMP/cpu-load/sanitized"
+          "$RUNNER_TEMP/cpu-load/sanitized" > cpu-load-artifact/sanitized.log 2>&1
+          cp "$RUNNER_TEMP/cpu-load/"*.log cpu-load-artifact/
+          cp .github/workflows/cpu-load-linux-aarch64.yml cpu-load-artifact/workflow.yml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cpu-load-linux-aarch64-${{ github.sha }}
+          path: cpu-load-artifact/
+          if-no-files-found: error
+          retention-days: 14
