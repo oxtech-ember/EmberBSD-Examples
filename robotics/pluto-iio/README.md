@@ -21,7 +21,7 @@ make CC=/absolute/armv7--netbsdelf-eabihf-gcc \
   CPPFLAGS='--sysroot=/absolute/earmv7hf-sysroot' \
   LDFLAGS='--sysroot=/absolute/earmv7hf-sysroot -static'
 ./pluto-iiod --self-test
-./pluto-iiod /dev/zynqudc0 /dev/adiadc0 YOUR_VID_HEX YOUR_PID_HEX
+./pluto-iiod /dev/usbperiph0 /dev/adiadc0 YOUR_VID_HEX YOUR_PID_HEX
 ```
 
 Select USB identifiers that you are authorized to use. There is no default VID/PID.
