@@ -16,7 +16,7 @@ fixture, library = sys.argv[1:]
 if sys.platform == "darwin":
     usb = os.path.join(os.path.dirname(library), "libusb-1.0.0.dylib")
     C.CDLL(usb, mode=C.RTLD_GLOBAL)
-lib = C.CDLL(library, use_errno=True)
+lib = C.CDLL(library, use_errno=True, mode=C.RTLD_GLOBAL)
 P = C.c_void_p
 def api(name, result, *args):
     f = getattr(lib, name)
@@ -71,6 +71,17 @@ try:
     assert write(rx,b"sampling_frequency",b"1536000") < 0
     assert write(lo,b"frequency",b"1090000000") > 0
     assert read(lo,b"frequency",text,128)==10 and text.value==b"1090000000"
+    tx_lo = channel(phy,b"altvoltage1",True)
+    assert tx_lo and write(tx_lo,b"powerdown",b"1") > 0
+    assert write(tx_lo,b"powerdown",b"0") < 0
+    assert write(rx,b"filter_fir_en",b"1") < 0
+    if os.environ.get("LIBAD9361"):
+        ad = C.CDLL(os.environ["LIBAD9361"])
+        ad.ad9361_set_bb_rate.argtypes = [P,C.c_ulong]
+        ad.ad9361_set_bb_rate.restype = C.c_int
+        assert ad.ad9361_set_bb_rate(phy,2400000) < 0
+        assert read(rx,b"sampling_frequency",text,128)==7 and text.value==b"2399999"
+        print("bundled libad9361: unsupported FIR helper fails; direct RX rate remains actual")
     enable(channel(adc,b"voltage0",False));enable(channel(adc,b"voltage1",False))
     assert size(adc)==4
     buf = buffer_create(adc,8,False)

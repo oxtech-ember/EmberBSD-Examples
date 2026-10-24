@@ -17,6 +17,7 @@ struct server {
 	int usb, quitting;
 	unsigned mask;
 	uint64_t generation;
+	uint64_t epoch[2];
 	pthread_mutex_t lock;
 	pthread_mutex_t state_lock;
 	pthread_cond_t changed;
@@ -32,7 +33,7 @@ interrupt(int signo)
 }
 
 static int
-transfer(struct server *s, unsigned ep, const void *b, size_t n, uint64_t generation)
+transfer(const struct server *s, unsigned ep, const void *b, size_t n, uint64_t generation)
 {
 	struct usbperiph_xfer x = {
 		.buffer = (uint64_t)(uintptr_t)b, .generation = generation,
@@ -70,7 +71,7 @@ static ssize_t input(void *v, void *b, size_t n) { return rx_adc_read(&((struct 
 static int settings(void *v, unsigned timeout, unsigned blocks) { return rx_adc_settings(&((struct server *)v)->adc, timeout, blocks); }
 
 static void
-cancel(struct server *s, unsigned mask)
+cancel(const struct server *s, unsigned mask)
 {
 	/* This does not hold the protocol mutex. It can wake a blocked worker. */
 	for (uint32_t ep = 1; ep <= 2; ep++) if (mask & (1U << (ep - 1))) {
@@ -78,7 +79,7 @@ cancel(struct server *s, unsigned mask)
 		(void)ioctl(s->usb, USBPERIPH_IOC_CANCEL, &ep);
 		(void)ioctl(s->usb, USBPERIPH_IOC_CANCEL, &in);
 	}
-	(void)ioctl(s->adc.fd, ADI_AXI_ADCIOC_STREAM_STOP, NULL);
+	(void)ioctl(s->adc.fd, ADI_AXI_ADCIOC_STREAM_STOP, (void *)NULL);
 }
 
 static void *
@@ -89,17 +90,19 @@ work(void *v)
 	/* One high-speed packet also completes exact-512-byte host writes. */
 	unsigned char data[512] = {0};
 	for (;;) {
-		uint64_t generation;
+		uint64_t generation, epoch;
 		pthread_mutex_lock(&s->state_lock);
 		while (!(s->mask & (1U << w->pipe)) && !s->quitting)
 			pthread_cond_wait(&s->changed, &s->state_lock);
 		if (s->quitting) { pthread_mutex_unlock(&s->state_lock); return NULL; }
 		generation = s->generation;
+		epoch = s->epoch[w->pipe];
 		pthread_mutex_unlock(&s->state_lock);
 		int n = transfer(s, w->pipe + 1, data, sizeof(data), generation);
 		pthread_mutex_lock(&s->lock);
 		pthread_mutex_lock(&s->state_lock);
-		int valid = s->generation == generation && (s->mask & (1U << w->pipe));
+		int valid = s->generation == generation && s->epoch[w->pipe] == epoch &&
+		    (s->mask & (1U << w->pipe));
 		pthread_mutex_unlock(&s->state_lock);
 		if (valid) {
 			if (n > 0) {
@@ -109,7 +112,7 @@ work(void *v)
 					pthread_mutex_lock(&s->state_lock); s->mask &= ~(1U << w->pipe); pthread_mutex_unlock(&s->state_lock);
 					(void)rx_disconnect(&s->service);
 				}
-			} else if (n != -ETIMEDOUT && n != -EINTR && n != -ECANCELED && n != -ESTALE) {
+			} else if (n < 0 && n != -ETIMEDOUT && n != -EINTR && n != -ECANCELED && n != -ESTALE) {
 				pthread_mutex_lock(&s->state_lock); s->mask &= ~(1U << w->pipe); pthread_mutex_unlock(&s->state_lock);
 				(void)rx_disconnect(&s->service);
 			}
@@ -183,7 +186,10 @@ main(int argc, char **argv)
 			pthread_mutex_lock(&s.state_lock); mask = s.mask; pthread_mutex_unlock(&s.state_lock);
 			reply.stall = rx_usb_setup(event.setup, &mask, &reset) != 0;
 			if (!reply.stall && reset) {
-				pthread_mutex_lock(&s.state_lock); s.mask &= ~reset; pthread_mutex_unlock(&s.state_lock);
+				pthread_mutex_lock(&s.state_lock);
+				s.mask &= ~reset;
+				for (unsigned p = 0; p < 2; p++) if (reset & (1U << p)) s.epoch[p]++;
+				pthread_mutex_unlock(&s.state_lock);
 				cancel(&s, reset);
 			}
 			pthread_mutex_lock(&s.lock);
@@ -197,7 +203,9 @@ main(int argc, char **argv)
 			pthread_mutex_unlock(&s.lock);
 		} else if (event.type == USBPERIPH_EVENT_RESET || event.type == USBPERIPH_EVENT_DISCONNECT ||
 		    event.type == USBPERIPH_EVENT_SUSPEND || (event.type == USBPERIPH_EVENT_CONFIGURE && !event.configured)) {
-			pthread_mutex_lock(&s.state_lock); s.mask = 0; s.generation = event.generation; pthread_mutex_unlock(&s.state_lock);
+			pthread_mutex_lock(&s.state_lock);
+			s.mask = 0; s.generation = event.generation; s.epoch[0]++; s.epoch[1]++;
+			pthread_mutex_unlock(&s.state_lock);
 			cancel(&s, 3);
 			pthread_mutex_lock(&s.lock);
 			(void)rx_disconnect(&s.service);

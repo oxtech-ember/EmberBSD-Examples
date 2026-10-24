@@ -20,6 +20,11 @@ for t in protocol adc usb; do
 done
 "$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
     -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
+    -I"$ABI_INCLUDE" "$dir/tests/worker.c" "$dir/src/iio_rx.c" \
+    "$dir/src/native_adc.c" "$dir/src/native_usb.c" -pthread -lm -o "$work/worker"
+"$work/worker"
+"$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
+    -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
     -I"$ABI_INCLUDE" "$dir"/src/*.c -pthread -lm -o "$work/pluto-iiod"
 "$work/pluto-iiod" --self-test
 if [ -n "${LIBIIO:-}" ]; then

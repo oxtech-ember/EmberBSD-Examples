@@ -110,6 +110,7 @@ channel masks, pipe ownership, actual-rate readback, rejected FIR and TX operati
 loss errors, USB descriptors, EP0 validation, and cleanup.
 The optional test loads an existing libiio 0.25 library. It parses production XML,
 sets and reads RX attributes, opens I/Q channels, and refills a synthetic buffer.
+Set `LIBAD9361` to also check the existing helper's unsupported FIR error path.
 Its loopback transport exercises IIOD protocol compatibility. It does not test USB.
 
 Source and tests are AI-assisted by OpenAI Codex (GPT-6).
