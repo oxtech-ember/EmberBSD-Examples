@@ -151,9 +151,10 @@ close_device:
 			goto done;
 		}
 	}
-	fprintf(out, "END block=0 samples=%" PRIu64 " bytes=%zu status=ok\n",
-	    count, bytes);
-	if (fflush(out) == EOF)
+	if (fprintf(out, "END block=0 samples=%" PRIu64
+	    " bytes=%zu status=ok\n", count, bytes) < 0)
+		error = EIO;
+	if (fflush(out) == EOF || ferror(out))
 		error = EIO;
 done:
 	free(iq);

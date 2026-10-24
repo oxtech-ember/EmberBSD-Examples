@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: BSD-2-Clause */
 /* Test the real CLI adapter; only the device system calls are substituted. */
 #define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
+#define _DARWIN_C_SOURCE
+#define _NETBSD_SOURCE
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <dev/fdt/adi_axi_adc.h>
@@ -32,6 +35,51 @@ static ssize_t device_read(int, void *, size_t);
 #undef ioctl
 #undef close
 #undef open
+
+/* Fail after the complete payload, with no buffered bytes left to flush. */
+struct footer_sink {
+	size_t limit;
+	size_t accepted;
+	unsigned refused;
+};
+
+static ssize_t
+sink_write(void *cookie, const char *data, size_t length)
+{
+	struct footer_sink *sink = cookie;
+
+	(void)data;
+	if (length > sink->limit - sink->accepted) {
+		sink->refused++;
+		errno = ENOSPC;
+		return -1;
+	}
+	sink->accepted += length;
+	return (ssize_t)length;
+}
+
+#ifndef __linux__
+static int
+bsd_sink_write(void *cookie, const char *data, int length)
+{
+	return (int)sink_write(cookie, data, (size_t)length);
+}
+#endif
+
+static FILE *
+footer_stream(struct footer_sink *sink)
+{
+#ifdef __linux__
+	cookie_io_functions_t ops = { .write = sink_write };
+	FILE *out = fopencookie(sink, "w", ops);
+#else
+	FILE *out = funopen(sink, NULL, bsd_sink_write, NULL, NULL);
+#endif
+
+	CHECK(out != NULL);
+	CHECK(setvbuf(out, NULL, _IONBF, 0) == 0);
+	return out;
+}
 
 static unsigned phase, reads, opens, closes;
 static uint32_t samples;
@@ -203,6 +251,16 @@ main(void)
 	rewind(out);
 	char text[512]; size_t n = fread(text, 1, sizeof(text)-1, out); text[n] = '\0';
 	CHECK(strstr(text, "REQUEST frequency_hz=162000000 sample_rate_hz=3072000 bandwidth_hz=600000\n"));
+	fclose(out); fclose(err);
+	/* A failed END write must fail even when the following fflush succeeds. */
+	const char *footer = strstr(text, "END block=0 "); CHECK(footer != NULL);
+	struct footer_sink sink = { .limit = (size_t)(footer - text) };
+	out = footer_stream(&sink); err = tmpfile(); CHECK(err != NULL);
+	phase = reads = opens = closes = 0;
+	int footer_result = iq_run(6, argv, out, err);
+	CHECK(sink.accepted == sink.limit && sink.refused > 0);
+	CHECK(ferror(out) && fflush(out) == 0);
+	CHECK(footer_result == 1);
 	fclose(out); fclose(err);
 	/* Output errors must propagate to the exit status. */
 	out = fopen("/dev/null", "r"); err = tmpfile(); CHECK(out && err);
