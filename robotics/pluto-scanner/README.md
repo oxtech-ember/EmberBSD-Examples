@@ -20,7 +20,11 @@ make CC=/absolute/armv7--netbsdelf-eabihf-gcc \
 The default plan uses 10 MSPS, 8 MHz bandwidth, 3 MHz tune steps and 4096
 complex samples per capture. The last tune reaches the exact upper endpoint.
 The default sweep contains 1160 centers. Pass a smaller interval in hertz
-for a shorter scan. Both endpoints must remain within the supported band.
+for a shorter scan. Explicit endpoints can span 70 MHz to 6 GHz if the receiver driver permits them.
+The default sweep stays within 325 MHz to 3.8 GHz. AD9363 receivers require
+the explicit `emberbsd,experimental-rx-extended-range` FDT property for tuning
+outside that default band. This is experimental tuning, not RF calibration.
+The AD9363 20 MHz RF bandwidth limit remains in force.
 
 The program opens the receiver read only. It configures RX1, captures finite
 IQ, reads the complete sample buffer, then checks final capture status. A capture

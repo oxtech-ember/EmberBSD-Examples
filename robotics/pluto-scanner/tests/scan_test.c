@@ -9,7 +9,7 @@
 #include "scan.h"
 
 static const struct scan_plan valid = {
-	SCAN_MIN_HZ, SCAN_MAX_HZ, 3000000, 10000000, 8000000, 4096
+	325000000, 3800000000ULL, 3000000, 10000000, 8000000, 4096
 };
 static int16_t iq[2 * 4096];
 
@@ -88,10 +88,18 @@ main(void)
 		centers++;
 	}
 	assert(center == p.last_hz && centers == 1160);
+	p.first_hz = 70000000;
+	p.last_hz = 6000000000ULL;
+	assert(scan_plan_check(&p) == 0);
+	assert(scan_plan_next(&p, 5999000000ULL, &next) == 0);
+	assert(next == 6000000000ULL);
+	p.first_hz = 69999999;
+	assert(scan_plan_check(&p) == EINVAL);
+	p = valid;
 	p.step_hz = 9000000; assert(scan_plan_check(&p) == EINVAL);
 	p = valid; p.samples = 4095; assert(scan_plan_check(&p) == EINVAL);
 	p = valid; p.samples = SCAN_MAX_SAMPLES + 1; assert(scan_plan_check(&p) == EINVAL);
-	p = valid; p.first_hz--; assert(scan_plan_check(&p) == EINVAL);
+	p = valid; p.first_hz = 69999999; assert(scan_plan_check(&p) == EINVAL);
 	p = valid; p.rate_hz = 0; assert(scan_plan_check(&p) == EINVAL);
 	p = valid; p.first_hz = p.last_hz;
 	assert(scan_plan_next(&p, p.first_hz, &next) == EINVAL);

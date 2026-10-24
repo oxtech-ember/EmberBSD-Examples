@@ -105,6 +105,7 @@ usage(FILE *out)
 {
 	fputs("usage: pluto-scan [device [first_hz last_hz]]\n"
 	    "Defaults: /dev/adiadc0, 325000000..3800000000 Hz, one RX-only sweep.\n"
+	    "Explicit endpoints: 70000000..6000000000 Hz if the driver permits them.\n"
 	    "CSV levels are relative dBFS per FFT bin, not calibrated dBm.\n", out);
 }
 
@@ -112,7 +113,8 @@ int
 main(int argc, char **argv)
 {
 	struct scan_plan plan = {
-		SCAN_MIN_HZ, SCAN_MAX_HZ, 3000000, 10000000, 8000000, 4096
+		SCAN_DEFAULT_MIN_HZ, SCAN_DEFAULT_MAX_HZ,
+		3000000, 10000000, 8000000, 4096
 	};
 	struct receiver rx = { .fd = -1, .plan = &plan };
 	struct sigaction action;
