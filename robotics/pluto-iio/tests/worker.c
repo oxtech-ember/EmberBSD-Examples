@@ -19,7 +19,7 @@ fixture_ioctl(int fd, unsigned long op, ...)
 {
 	va_list args;
 	(void)fd;
-	if (op != USBPERIPH_IOC_XFER) return 0;
+	if (op != USBPERIPH_IOC_XFER) { errno = EOPNOTSUPP; return -1; }
 	va_start(args, op);
 	struct usbperiph_xfer *x = va_arg(args, struct usbperiph_xfer *);
 	va_end(args);
