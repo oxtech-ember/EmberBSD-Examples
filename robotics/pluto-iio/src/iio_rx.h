@@ -14,7 +14,15 @@ struct rx_ops {
 	int (*stop)(void *);
 	int (*send)(void *, unsigned, const void *, size_t);
 	int (*settings)(void *, unsigned, unsigned);
+	void (*state_lock)(void *);
+	void (*state_unlock)(void *);
+	int (*begin_read)(void *);
+	void (*end_read)(void *);
 };
+/* Serialize callers per pipe. State callbacks guard shared RX ownership.
+ * Read transaction callbacks can wait; no state lock is held while they run.
+ * Disconnect requires both pipe callers to be idle.
+ */
 struct rx_pipe {
 	char line[RX_COMMAND_MAX], payload[RX_PAYLOAD_MAX + 1];
 	size_t used, pending, received;
@@ -25,9 +33,11 @@ struct rx_service {
 	void *arg;
 	struct rx_pipe pipe[2];
 	int active, owner;
+	unsigned closing;
 };
 void rx_init(struct rx_service *, const struct rx_ops *, void *);
 int rx_feed(struct rx_service *, unsigned, const void *, size_t);
 int rx_disconnect(struct rx_service *);
+int rx_close_pipe(struct rx_service *, unsigned);
 const char *rx_xml(void);
 #endif

@@ -41,10 +41,9 @@ fixture_ioctl(int fd, unsigned long op, ...)
 int
 main(void)
 {
-	struct server s = { .usb = -1, .mask = 1, .generation = 7,
-	    .lock = PTHREAD_MUTEX_INITIALIZER, .state_lock = PTHREAD_MUTEX_INITIALIZER,
-	    .changed = PTHREAD_COND_INITIALIZER };
-	struct rx_ops ops = { attribute, start, input, stop, send_bytes, settings };
+	struct server s = SERVER_INITIALIZER;
+	s.mask = 1; s.generation = 7;
+	struct rx_ops ops = { attribute, start, input, stop, send_bytes, settings, state_lock, state_unlock, begin_read, end_read };
 	struct worker w = { &s, 0 };
 	pthread_t thread;
 	rx_adc_init(&s.adc, -1); rx_init(&s.service, &ops, &s);
@@ -59,7 +58,8 @@ main(void)
 	pthread_mutex_lock(&s.state_lock); s.quitting = 1; pthread_mutex_unlock(&s.state_lock);
 	assert(pthread_join(thread, NULL) == 0);
 	assert(s.adc.timeout_ms == 2000);
-	pthread_cond_destroy(&s.changed); pthread_mutex_destroy(&s.state_lock); pthread_mutex_destroy(&s.lock);
+	pthread_cond_destroy(&s.changed); pthread_mutex_destroy(&s.state_lock); pthread_mutex_destroy(&s.adc_lock);
+	for (unsigned p=0;p<2;p++) {pthread_mutex_destroy(&s.command_lock[p]);pthread_mutex_destroy(&s.admission[p]);}
 	puts("worker: stale packet after pipe reopen rejected");
 	return 0;
 }

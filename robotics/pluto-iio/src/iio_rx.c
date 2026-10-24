@@ -59,6 +59,28 @@ rx_init(struct rx_service *s, const struct rx_ops *o, void *a)
 	s->arg = a;
 }
 
+static void
+state_lock(struct rx_service *s)
+{
+	if (s->ops.state_lock) s->ops.state_lock(s->arg);
+}
+
+static void
+state_unlock(struct rx_service *s)
+{
+	if (s->ops.state_unlock) s->ops.state_unlock(s->arg);
+}
+
+static int
+owns(struct rx_service *s, unsigned p)
+{
+	int e;
+	state_lock(s);
+	e = !s->active ? -EBADF : s->owner != (int)p ? -EBUSY : 0;
+	state_unlock(s);
+	return e;
+}
+
 static int
 number(struct rx_service *s, unsigned p, long n)
 {
@@ -137,7 +159,10 @@ command(struct rx_service *s, unsigned p, int payload)
 	strcpy(line, s->pipe[p].line);
 	for (q = strtok_r(line, " \t\r", &save); q;
 	    q = strtok_r(NULL, " \t\r", &save)) {
-		if (nt == 8) return number(s, p, -EINVAL);
+		if (nt == 8) {
+			if (!strcmp(t[0], "WRITE")) s->pipe[p].poisoned = 1;
+			return number(s, p, -EINVAL);
+		}
 		t[nt++] = q;
 	}
 	if (nt == 0) return number(s, p, -EINVAL);
@@ -154,7 +179,10 @@ command(struct rx_service *s, unsigned p, int payload)
 		return number(s, p, s->ops.settings(s->arg, 0, (unsigned)n));
 	if (!strcmp(t[0], "READ")) return attribute(s, p, t, nt, 0);
 	if (!strcmp(t[0], "WRITE")) {
-		if (nt < 4 || decimal(t[nt - 1], &n)) return number(s, p, -EINVAL);
+		if (nt < 4 || decimal(t[nt - 1], &n)) {
+			s->pipe[p].poisoned = 1;
+			return number(s, p, -EINVAL);
+		}
 		if (n == 0 || n > RX_PAYLOAD_MAX) {
 			s->pipe[p].poisoned = 1;
 			return number(s, p, -E2BIG);
@@ -166,37 +194,41 @@ command(struct rx_service *s, unsigned p, int payload)
 	if (!strcmp(t[0], "OPEN") && nt == 4 &&
 	    !strcmp(t[1], "iio:device1") && !decimal(t[2], &n) &&
 	    n >= 2 && n <= 1048576 && !(n & 1) && !strcmp(t[3], "00000003")) {
-		if (s->active) return number(s, p, -EBUSY);
+		state_lock(s);
+		if (s->active || s->closing) { state_unlock(s); return number(s, p, -EBUSY); }
+		s->active = 1; s->owner = (int)p;
+		state_unlock(s);
 		e = s->ops.start(s->arg, (unsigned)n);
-		if (e == 0) { s->active = 1; s->owner = (int)p; }
+		if (e) { state_lock(s); s->active = 0; state_unlock(s); }
 		return number(s, p, e);
 	}
 	if (!strcmp(t[0], "CLOSE") && nt == 2 && !strcmp(t[1], "iio:device1")) {
-		if (!s->active) return number(s, p, -EBADF);
-		if (s->owner != (int)p) return number(s, p, -EBUSY);
-		e = s->ops.stop(s->arg);
-		s->active = 0;
+		if ((e = owns(s, p)) != 0) return number(s, p, e);
+		e = rx_close_pipe(s, p);
 		return number(s, p, e);
 	}
 	if (!strcmp(t[0], "READBUF") && nt == 3 && !strcmp(t[1], "iio:device1") &&
 	    !decimal(t[2], &n) && n > 0 && n <= 4194304 && !(n & 3)) {
 		unsigned char b[RX_CHUNK_MAX];
 		int first = 1;
-		if (!s->active) return number(s, p, -EBADF);
-		if (s->owner != (int)p) return number(s, p, -EBUSY);
+		if ((e = owns(s, p)) != 0) return number(s, p, e);
+		if (s->ops.begin_read && (e = s->ops.begin_read(s->arg)) != 0)
+			return number(s, p, e);
 		while (n > 0) {
 			size_t want = n < sizeof(b) ? n : sizeof(b);
 			ssize_t got = s->ops.read(s->arg, b, want);
 			if (got <= 0 || (size_t)got > want || (got & 3)) {
-				(void)s->ops.stop(s->arg); s->active = 0;
+				if (s->ops.end_read) s->ops.end_read(s->arg);
+				(void)rx_close_pipe(s, p);
 				return number(s, p, got < 0 ? got : -EIO);
 			}
 			e = number(s, p, got);
 			if (!e && first) e = s->ops.send(s->arg, p, "00000003\n", 9);
 			if (!e) e = s->ops.send(s->arg, p, b, (size_t)got);
-			if (e) return e;
+			if (e) { if (s->ops.end_read) s->ops.end_read(s->arg); return e; }
 			first = 0; n -= (size_t)got;
 		}
+		if (s->ops.end_read) s->ops.end_read(s->arg);
 		return 0;
 	}
 	return number(s, p, -EINVAL);
@@ -238,8 +270,26 @@ rx_feed(struct rx_service *s, unsigned p, const void *data, size_t n)
 int
 rx_disconnect(struct rx_service *s)
 {
-	int e = s->active ? s->ops.stop(s->arg) : 0;
+	int active;
+	state_lock(s); active = s->active;
 	s->active = 0;
+	state_unlock(s);
+	int e = active ? s->ops.stop(s->arg) : 0;
 	memset(s->pipe, 0, sizeof(s->pipe));
+	return e;
+}
+
+int
+rx_close_pipe(struct rx_service *s, unsigned p)
+{
+	int e = 0;
+	if (p > 1) return -EINVAL;
+	state_lock(s);
+	int active = s->active && s->owner == (int)p;
+	if (active)
+		s->active = 0;
+	state_unlock(s);
+	if (active) e = s->ops.stop(s->arg);
+	memset(&s->pipe[p], 0, sizeof(s->pipe[p]));
 	return e;
 }

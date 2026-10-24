@@ -25,7 +25,7 @@ static int output(void*v,unsigned p,const void*b,size_t n) {
 }
 int main(void) {
 	struct rx_adc a;struct rx_service s;unsigned char b[256];
-	struct rx_ops ops={rx_adc_attr,rx_adc_start,rx_adc_read,rx_adc_stop,output,rx_adc_settings};
+	struct rx_ops ops={rx_adc_attr,rx_adc_start,rx_adc_read,rx_adc_stop,output,rx_adc_settings,NULL,NULL,NULL,NULL};
 	rx_adc_init(&a,-1);a.control=control;a.input=input;rx_init(&s,&ops,&a);
 	for(;;){ssize_t n=read(STDIN_FILENO,b,sizeof(b));if(n<=0)break;if(rx_feed(&s,0,b,(size_t)n))break;}
 	return rx_disconnect(&s)!=0;

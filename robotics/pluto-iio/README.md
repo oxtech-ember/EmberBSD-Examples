@@ -2,6 +2,7 @@
 
 `pluto-iiod` maps the libiio 0.25 IIOD protocol to EmberBSD receive devices.
 It uses the native USB peripheral ABI and the ADC streaming ABI version 2.
+The peripheral driver must implement `USBPERIPH_IOC_ENDPOINT_GATE`.
 It has no Linux FunctionFS, sysfs, libiio, or compression dependency on the board.
 The runtime dependencies are the base C, math, and pthread libraries.
 
@@ -38,8 +39,23 @@ One session owns RX1. By default, four DMA blocks feed separately owned user buf
 The USB driver copies each buffer again. ADC and USB never share DMA mappings.
 Configuration changes stop and drain the stream before applying the next configuration.
 They restart the stream only after successful configuration and clock readback.
-Reset, suspend, cable removal, and pipe closure cancel the receive session.
+Reset, suspend, and cable removal cancel the receive session.
+Closing its owning pipe also cancels RX.
 Failed stop or drain errors propagate. They do not permit a silent restart.
+
+Each pipe has separate command and transfer admission locks. A short shared lock
+protects RX ownership and pipe epochs. It is never held during ADC or USB waits.
+A separate ADC transaction lock keeps one READBUF coherent across configuration changes.
+Closing an unrelated pipe does not stop RX or wait for that READBUF.
+A counted WRITE on another open pipe remains intact.
+
+Close first disables admission in userland and closes both kernel endpoint gates.
+The kernel closes each gate before cancel and drain. The service then waits for
+old transfer calls and the closing pipe's command to finish before it acknowledges EP0.
+Responses retain their original command epoch. They cannot acquire a new pipe epoch.
+A gate or drain failure receives no successful close acknowledgement.
+Startup tests gate support before CONNECT. Vendor OPEN reopens the selected pair.
+Global RESET closes both pipes; a single CLOSE clears only that pipe's parser.
 
 ## Protocol and attributes
 
@@ -55,6 +71,7 @@ so libiio can fall back to plain XML. Cyclic buffers and TX buffers are rejected
 `TIMEOUT` sets the ADC poll deadline. `BUFFERS_COUNT` selects 3 through 16 blocks before OPEN.
 Commands allow 511 bytes before LF. Attribute payloads allow 1024 bytes.
 An oversized payload poisons its pipe until reset or closure. Its bytes cannot become commands.
+A WRITE with an invalid length or too many tokens also poisons its pipe.
 `READBUF` allows at most 4 MiB and sends chunks no larger than 16 KiB.
 Only the exact I/Q mask `00000003` is accepted.
 Protocol errors use Linux IIOD errno numbers, independently of the BSD host ABI.
@@ -108,6 +125,9 @@ Native builds always use the real EmberBSD header and ioctl values.
 Tests exercise partial commands and writes, malformed input, allocation bounds,
 channel masks, pipe ownership, actual-rate readback, rejected FIR and TX operations,
 loss errors, USB descriptors, EP0 validation, and cleanup.
+Real-worker syscall fixtures close during ADC waits, before responses, and during
+transfer admission. They check no new response, bounded EP0 reply, independent pipe
+closure, ignored ioctl error outputs, and no close acknowledgement after failed drain.
 The optional test loads an existing libiio 0.25 library. It parses production XML,
 sets and reads RX attributes, opens I/Q channels, and refills a synthetic buffer.
 Set `LIBAD9361` to also check the existing helper's unsupported FIR error path.

@@ -4,15 +4,15 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-struct fixture { char out[65536]; size_t n; int starts, stops, fail; unsigned timeout, blocks; };
+struct fixture { char out[65536]; size_t n; int starts, stops, fail, writes; unsigned timeout, blocks; };
 static int send_bytes(void *v, unsigned p, const void *b, size_t n) {
 	struct fixture *f = v; (void)p;
 	assert(n <= sizeof(f->out) - f->n); memcpy(f->out + f->n, b, n); f->n += n; return 0;
 }
 static int attr(void *v, const char *d, const char *c, const char *a, char *b, size_t n, int w) {
-	(void)v; (void)d; (void)c;
+	(void)d; (void)c;
 	if (strcmp(a, "sampling_frequency")) return -ENOENT;
-	if (w) return !strcmp(b, "1536000") ? -ERANGE : 0;
+	if (w) { struct fixture *f=v;f->writes++; return !strcmp(b, "1536000") ? -ERANGE : 0; }
 	return snprintf(b, n, "2399999");
 }
 static int start(void *v, unsigned n) { struct fixture *f=v; assert(n > 0); f->starts++; return 0; }
@@ -23,7 +23,7 @@ static ssize_t data(void *v, void *b, size_t n) {
 	const struct fixture *f=v; if(f->fail) return -EOVERFLOW; memset(b, 0x5a, n); return (ssize_t)n;
 }
 static int settings(void *v, unsigned timeout, unsigned blocks) { struct fixture *f=v;f->timeout=timeout;f->blocks=blocks;return 0; }
-static const struct rx_ops ops = {attr,start,data,stop,send_bytes,settings};
+static const struct rx_ops ops = {attr,start,data,stop,send_bytes,settings,NULL,NULL,NULL,NULL};
 static void feed(struct rx_service *s, struct fixture *f, unsigned p, const char *cmd) {
 	f->n=0; memset(f->out,0,sizeof(f->out)); assert(rx_feed(s,p,cmd,strlen(cmd)) == 0);
 }
@@ -48,5 +48,24 @@ int main(void) {
 	assert(rx_feed(&s,0,"PRINT\n",6)==-EPROTO);
 	rx_init(&s,&ops,&f); memset(big,'a',sizeof(big)); assert(rx_feed(&s,0,big,sizeof(big))==-EMSGSIZE);
 	rx_init(&s,&ops,&f); feed(&s,&f,1,"OPEN iio:device1 4096 00000003\n"); assert(rx_disconnect(&s)==0); assert(!s.active); assert(s.pipe[0].used==0);
+	/* Closing the other pipe must preserve a counted write's framing. */
+	rx_init(&s,&ops,&f);f.writes=0;
+	feed(&s,&f,0,"WRITE iio:device0 INPUT voltage0 sampling_frequency 7\n240");
+	assert(rx_close_pipe(&s,1)==0);
+	feed(&s,&f,0,"0000");assert(f.writes==1);assert(!strcmp(f.out,"7\n"));
+	feed(&s,&f,1,"OPEN iio:device1 4096 00000003\n");
+	int stopped=f.stops; assert(rx_close_pipe(&s,0)==0);assert(s.active&&s.owner==1&&f.stops==stopped);
+	assert(rx_disconnect(&s)==0);assert(!s.active&&f.stops==stopped+1);
+	/* A malformed counted write must not turn its payload into PRINT. */
+	rx_init(&s,&ops,&f);
+	feed(&s,&f,0,"WRITE iio:device0 INPUT voltage0 sampling_frequency x y z 6\n");
+	assert(rx_feed(&s,0,"PRINT\n",6)==-EPROTO);
+	rx_init(&s,&ops,&f);
+	feed(&s,&f,0,"WRITE iio:device0 INPUT voltage0 sampling_frequency nonsense\n");
+	assert(rx_feed(&s,0,"PRI",3)==-EPROTO);
+	rx_init(&s,&ops,&f);f.n=0;
+	const char malformed[]="WRITE iio:device0 INPUT voltage0 sampling_frequency x y z 6\nPRINT\n";
+	assert(rx_feed(&s,0,malformed,sizeof(malformed)-1)==-EPROTO);
+	assert(f.n==4&&!memcmp(f.out,"-22\n",4));
 	puts("protocol: PASS"); return 0;
 }
