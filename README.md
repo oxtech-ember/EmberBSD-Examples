@@ -24,6 +24,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [Answers from local documents with SQLite FTS5 and llama.cpp](ai/local-knowledge/README.md)
 - [Simulated device telemetry and commands with Zenoh and ROS 2 Jazzy](robotics/zenoh-ros2/README.md)
 - [A software BPSK radio channel with GNU Radio](robotics/gnuradio-channel/README.md)
+- [A receive-only Pluto frequency scanner (under development)](robotics/pluto-scanner/README.md)
 - [Factor-graph optimization with known scalar and planar-pose solutions](robotics/gtsam-graph/README.md)
 - [Point-cloud filtering and rigid registration with PCL](robotics/pcl-cloud/README.md)
 - [Offline RGB-D SLAM and trajectory evaluation with ORB-SLAM3](robotics/orb-slam3-rgbd/README.md)
