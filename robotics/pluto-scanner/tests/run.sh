@@ -13,3 +13,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror ${CFLAGS:-} \
     -I"$dir/../src" "$dir/adapter_test.c" "$dir/../src/scan.c" -lm -o "$work/adapter-test"
 "$work/adapter-test"
+
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror ${CFLAGS:-} \
+    "$dir/iq_test.c" -o "$work/iq-test"
+"$work/iq-test"

@@ -49,6 +49,67 @@ The tune overlap covers the excluded DC region through adjacent captures.
 Plans must span more than two FFT bins. Boundary estimates within half a bin
 are clipped to the requested endpoint; frequency resolution remains one bin.
 
+## One finite raw IQ block
+
+`pluto-iq` uses the same receive-only ABI. It does not change the scanner,
+its 10 MSPS defaults, FFT processing, or CSV output.
+
+```sh
+./pluto-iq /dev/adiadc0 1090000000 2400000 2000000 262144 > adsb.iqhex
+./pluto-iq /dev/adiadc0 162000000 3072000 600000 262144 > ais.iqhex
+```
+
+The arguments are device, frequency, sample rate, bandwidth, and complex sample count.
+Numbers must contain decimal digits only. Frequency must be 70 MHz through 6 GHz.
+Rate and bandwidth must be positive and fit unsigned 32-bit integers.
+The driver checks whether the requested RF configuration is supported.
+Count must be even, from 2 through 262144. This bounds allocation to 1 MiB
+and makes the capture size a multiple of eight bytes.
+The no-FIR clock chain does not support 1.536 MSPS. Use 3.072 MSPS for this AIS experiment.
+These commands request settings; they do not establish the actual sample clock or RF reception.
+
+Each invocation opens one session, sends CONFIG and CAPTURE, then reads the complete buffer.
+The first read requests all capture bytes because ABI1 starts DMA in that read.
+An interrupted read retries the full request. A short read, EOF, or other error rejects the block.
+The helper checks fresh STATUS after reading, then closes the device before writing IQ.
+A failed capture, mismatched ABI, count, state, or final capture error produces no IQ output.
+Errors go to standard error. Invalid arguments return 2; device and output failures return 1.
+
+The ASCII format is version 1. This example has two complex samples:
+
+```text
+PLUTO-IQ 1
+BEGIN block=0 discontinuity=1
+REQUEST frequency_hz=1090000000 sample_rate_hz=2400000 bandwidth_hz=2000000
+FORMAT s12_le16_iq bytes_per_sample=4
+COUNT samples=2 bytes=8
+DATA offset=00000000 0001020304050607
+END block=0 samples=2 bytes=8 status=ok
+```
+
+Lines end with LF. The receiver console can convert LF to CRLF during transfer.
+Each DATA line has an eight-digit lowercase hexadecimal byte offset and one space
+before the payload. Payload contains lowercase hexadecimal bytes, with no separators.
+Each line contains 32 bytes except the final line, which contains the remainder.
+Offsets start at zero and increase by 32. The final offset plus row length must equal COUNT bytes.
+END repeats the exact sample and byte counts. No bytes follow END in the helper output.
+A consumer must check every offset, payload length, count, and complete END line.
+A local file also requires exit status zero. An incomplete serial transfer must be rejected.
+
+Bytes retain device order: I low byte, I high byte, Q low byte, Q high byte.
+Each component is signed 12-bit two's complement in a little-endian 16-bit container.
+Sign-extend its low 12 bits before processing; do not assume the upper four bits are sign bits.
+REQUEST fields contain requested values. ABI1 does not return an actual sample rate.
+The footer confirms finite capture completion, not a measured clock or a TX register snapshot.
+Capture STATUS and a TX-inhibit hardware snapshot remain separate acceptance evidence.
+
+Every invocation has block index zero and declares a discontinuity before its data.
+Keep each block in its own file and decode it independently. Do not concatenate blocks
+into a continuous stream or hide capture gaps through resampling.
+The maximum block lasts about 109 ms at 2.4 MSPS, or 85 ms at 3.072 MSPS.
+At 115200 baud with 8N1 framing, its ASCII transfer takes about 4.1 minutes.
+This helper is a finite diagnostic. It does not implement USB streaming.
+
 ## Checks and current limits
 
 ```sh
@@ -61,6 +122,10 @@ overlap checks, and stale-result rejection after a failed capture. GCC16
 ASan/UBSan checks pass on macOS arm64. Cppcheck and GCC path analysis complete
 without diagnostics. Native compilation uses the actual receive ABI header.
 Host CLI checks cover exact endpoints, malformed input and failed real ioctl.
+Finite IQ adapter tests exercise the production CLI with device system-call fixtures.
+They cover full-buffer first reads, maximum count, byte alignment, indexed framing,
+strict arguments, interrupted reads, short reads, capture errors, and stale-status refusal.
+They also check the separate ADS-B and AIS request settings and output-error propagation.
 
 A static ARMv7 hard-float build ran on a PlutoSDR Nano from RAM on 2026-10-24.
 The receiver used EmberBSD commit `10d9f2d024ab1a333aee740a083ccf4f7fa6ce1b`,
