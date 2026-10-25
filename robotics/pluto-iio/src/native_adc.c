@@ -228,6 +228,25 @@ rx_adc_attr(void *v, const char *dev, const char *ch, const char *name,
 	} else {
 		if ((e = integer(b, &n)) != 0) return e;
 		if (kind == 1) {
+			if (a->configured) {
+				/* Fresh kernel status qualifies an actual-rate roundtrip.
+				 * Keep its original request, including quantized edges.
+				 */
+				if ((e = status(a)) != 0) return e;
+				if (n != 0 && n == a->status.sample_rate_hz) {
+					const struct adi_axi_adc_stream_status *s = &a->status;
+					if (s->last_error < 0) return -EPROTO;
+					if (s->last_error) return -s->last_error;
+					if (s->discontinuities || s->dropped_blocks ||
+					    (s->flags & ADI_AXI_ADC_STREAM_LOSS_UNKNOWN))
+						return -EOVERFLOW;
+					if ((s->flags & ~ADI_AXI_ADC_STREAM_RUNNING) ||
+					    !!(s->flags & ADI_AXI_ADC_STREAM_RUNNING) != !!a->running ||
+					    s->reserved[0] || s->reserved[1] || s->reserved[2])
+						return -EPROTO;
+					return 0;
+				}
+			}
 			if (n < 2083334 || n > 61440000) return -ERANGE;
 			next.sample_rate_hz = (uint32_t)n;
 		} else if (kind == 2) {

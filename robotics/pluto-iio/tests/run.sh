@@ -7,10 +7,10 @@ case "$CC" in /*) ;; *) echo 'CC must be absolute' >&2; exit 2;; esac
 dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/pluto-iio.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-for t in protocol adc adc_diagnostic usb; do
+for t in protocol adc adc_diagnostic adc_roundtrip usb; do
     case "$t" in
         protocol) sources="$dir/src/iio_rx.c";;
-        adc|adc_diagnostic) sources="$dir/src/native_adc.c";;
+        adc|adc_diagnostic|adc_roundtrip) sources="$dir/src/native_adc.c";;
         usb) sources="$dir/src/native_usb.c";;
     esac
     "$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \

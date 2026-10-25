@@ -111,6 +111,16 @@ Unknown dropped sample counts remain unknown; the service does not fabricate a l
 The no-FIR path rejects 1.536 MSPS. ADS-B requests 2.4 MSPS; actual qualified readback
 is 2,399,999 Hz. Initial AIS requests 3.072 MSPS; actual readback is 3,071,999 Hz.
 These are clock qualifications, not proof of decoded RF messages.
+Writing the current actual sample rate back preserves the configured request.
+The adapter first queries fresh kernel stream status and validates its ABI.
+A healthy exact match keeps the stream and configuration unchanged, including
+an actual rate just below the request limit. It does not restart sampling.
+Faults, unknown flags, reserved fields and inconsistent running state reject
+that no-op. Negative `last_error` values are malformed status, not errno values.
+Fresh status queries report kernel-owned qualification; they do not measure RF clocks.
+For configured numeric rate writes, status or ABI errors precede range rejection.
+Malformed numbers and integer overflow still fail before any status query.
+Unconfigured sessions and different valid rates keep their normal configuration path.
 LocalRadar's existing AIS helper requests 1.536 MSPS and must fail until FIR support exists.
 Its ADS-B backend sets RX rate directly and accepts a two-hertz readback tolerance.
 SDR++ writes RX rate directly before calling `ad9361_set_bb_rate`.
