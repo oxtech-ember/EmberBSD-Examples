@@ -46,7 +46,7 @@ rx_adc_init(struct rx_adc *a, int fd)
 	a->control = control;
 	a->input = input;
 	a->timeout_ms = 2000;
-	a->blocks = 4;
+	a->blocks = 16;
 	a->config = (struct adi_axi_adc_config) {
 		.abi_version = ADI_AXI_ADC_ABI_VERSION,
 		.struct_size = sizeof(a->config),

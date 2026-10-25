@@ -43,7 +43,7 @@ The first eight ADC read errors also report fresh stream status on the existing 
 Failed status queries report their own error and do not expose undefined ioctl outputs.
 These observations retain the original read error and do not prove continuous sampling.
 
-One session owns RX1. By default, four DMA blocks feed separately owned user buffers.
+One session owns RX1. By default, 16 DMA blocks feed separately owned user buffers.
 The USB driver copies each buffer again. ADC and USB never share DMA mappings.
 Configuration changes stop and drain the stream before applying the next configuration.
 They restart the stream only after successful configuration and clock readback.
@@ -80,6 +80,12 @@ Pipe identifiers are 0 and 1. Requests must have no payload and target interface
 `OPEN`, `READBUF`, and `CLOSE` have bounded parsing. `ZPRINT` returns `EINVAL`
 so libiio can fall back to plain XML. Cyclic buffers and TX buffers are rejected.
 `TIMEOUT` sets the ADC poll deadline. `BUFFERS_COUNT` selects 3 through 16 blocks before OPEN.
+An explicit count overrides the default until another count or service restart.
+Pipe CLOSE, USB RESET, and new client contexts retain that count.
+Each native block holds at most 256 KiB. The default queue holds at most 4 MiB of sample data.
+A 32,768-sample I/Q buffer uses 128 KiB blocks and a 2 MiB queue.
+Descriptors and separate user and USB copies require additional memory.
+More buffering does not guarantee continuity or repair provider faults.
 Commands allow 511 bytes before LF. Attribute payloads allow 1024 bytes.
 An oversized payload poisons its pipe until reset or closure. Its bytes cannot become commands.
 A WRITE with an invalid length or too many tokens also poisons its pipe.
