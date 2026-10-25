@@ -30,6 +30,11 @@ done
 for scenario in 1 2 3 4 5 6; do "$work/cancel" "$scenario"; done
 "$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
     -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
+    -I"$ABI_INCLUDE" "$dir/tests/startup.c" "$dir/src/iio_rx.c" \
+    "$dir/src/native_adc.c" "$dir/src/native_usb.c" -pthread -lm -o "$work/startup"
+for scenario in 1 2 3 4; do "$work/startup" "$scenario"; done
+"$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
+    -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
     -I"$ABI_INCLUDE" "$dir"/src/*.c -pthread -lm -o "$work/pluto-iiod"
 "$work/pluto-iiod" --self-test
 if [ -n "${LIBIIO:-}" ]; then

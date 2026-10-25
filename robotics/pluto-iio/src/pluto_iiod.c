@@ -4,6 +4,7 @@
 #include <sys/ioctl.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -21,7 +22,7 @@ struct server {
 	struct rx_adc adc;
 	struct rx_service service;
 	int usb, quitting;
-	unsigned mask;
+	unsigned mask, diagnostic_events;
 	uint64_t generation, epoch[2], command_epoch[2], command_generation[2];
 	pthread_mutex_t adc_lock, command_lock[2], admission[2], state_lock;
 	pthread_cond_t changed;
@@ -37,6 +38,39 @@ static volatile sig_atomic_t interrupted;
 static void interrupt(int signo) { (void)signo; interrupted = 1; }
 static void state_lock(void *v) { pthread_mutex_lock(&((struct server *)v)->state_lock); }
 static void state_unlock(void *v) { pthread_mutex_unlock(&((struct server *)v)->state_lock); }
+
+/* Diagnostics preserve errno and never change device admission policy. */
+static void
+diagnostic(const char *stage, int error, const struct usbperiph_event *event)
+{
+	int saved = errno;
+	fprintf(stderr, "pluto-iiod: stage=%s error=%d (%s)", stage, error, strerror(error));
+	if (event) fprintf(stderr, " event=%u sequence=%" PRIu64 " generation=%" PRIu64 " configured=%u",
+	    event->type, event->sequence, event->generation, event->configured);
+	if (event && event->type == USBPERIPH_EVENT_SETUP)
+		fprintf(stderr, " setup=%02x%02x%02x%02x%02x%02x%02x%02x",
+		    event->setup[0], event->setup[1], event->setup[2], event->setup[3],
+		    event->setup[4], event->setup[5], event->setup[6], event->setup[7]);
+	fputc('\n', stderr); fflush(stderr); errno = saved;
+}
+
+static void
+snapshot(struct server *s, const char *stage)
+{
+#ifdef USBPERIPH_IOC_SNAPSHOT
+	struct usbperiph_snapshot d = {0};
+	int saved = errno;
+	if (ioctl(s->usb, USBPERIPH_IOC_SNAPSHOT, &d) < 0) diagnostic(stage, errno, NULL);
+	else fprintf(stderr, "pluto-iiod: snapshot stage=%s generation=%" PRIu64
+	    " flags=%#x configuration=%u address=%u ep0=%u active=%u retained=%u"
+	    " irq=%" PRIu64 " reset=%" PRIu64 " setup=%" PRIu64 " disconnect=%" PRIu64 "\n",
+	    stage, d.generation, d.flags, d.configuration, d.address, d.ep0_phase,
+	    d.active_slots, d.retained_slots, d.irq_count, d.reset_count, d.setup_count, d.disconnect_count);
+	fflush(stderr); errno = saved;
+#else
+	(void)s; (void)stage;
+#endif
+}
 
 static int
 valid(struct server *s, unsigned p, uint64_t generation, uint64_t epoch)
@@ -132,13 +166,18 @@ static int begin_read(void *v) { return adc_enter(v); }
 static void end_read(void *v) { pthread_mutex_unlock(&((struct server *)v)->adc_lock); }
 
 static int
-endpoint_gate(const struct server *s, unsigned mask, int enable, uint64_t generation)
+endpoint_gate(struct server *s, unsigned mask, int enable, uint64_t generation)
 {
 	for (unsigned p = 0; p < 2; p++) if (mask & (1U << p)) {
 		for (unsigned in = 0; in < 2; in++) {
 			struct usbperiph_endpoint_gate g = { .generation = generation,
 							.endpoint = p + 1 + (in ? 0x80 : 0), .enable = (uint32_t)enable };
-			if (ioctl(s->usb, USBPERIPH_IOC_ENDPOINT_GATE, &g) < 0) return -errno;
+			if (ioctl(s->usb, USBPERIPH_IOC_ENDPOINT_GATE, &g) < 0) {
+				int e = errno;
+				fprintf(stderr, "pluto-iiod: stage=endpoint-gate endpoint=%#x enable=%u generation=%" PRIu64 "\n",
+				    g.endpoint, g.enable, g.generation);
+				diagnostic("endpoint-gate", e, NULL); snapshot(s, "gate-failure"); return -e;
+			}
 		}
 	}
 	return 0;
@@ -167,18 +206,20 @@ close_pipes(struct server *s, unsigned mask, uint64_t generation, int use_gate)
 		error = endpoint_gate(s, mask, 0, generation);
 		if (error) cancel_endpoints(s, mask); /* Clean up, but never ACK this failure. */
 	} else cancel_endpoints(s, mask); /* Bus reset already invalidates generation. */
-	if (owner_closed && ioctl(s->adc.fd, ADI_AXI_ADCIOC_STREAM_STOP, (void *)NULL) < 0)
-		error = -errno;
+	if (owner_closed && ioctl(s->adc.fd, ADI_AXI_ADCIOC_STREAM_STOP, (void *)NULL) < 0) {
+		error = -errno; diagnostic("adc-cancel-stop", -error, NULL);
+	}
 	for (unsigned p = 0; p < 2; p++) if (mask & (1U << p)) {
 		pthread_mutex_lock(&s->admission[p]); pthread_mutex_unlock(&s->admission[p]);
 		pthread_mutex_lock(&s->command_lock[p]);
 		int e = rx_close_pipe(&s->service, p);
+		if (e) diagnostic("protocol-close", -e, NULL);
 		if (!error) error = e;
 		pthread_mutex_unlock(&s->command_lock[p]);
 	}
 	/* An already admitted START can finish after the first raw STOP. New OPEN
 		* reservations remain disabled until this final native stop completes. */
-	if (owner_closed) { int e = stop(s); if (!error) error = e; }
+	if (owner_closed) { int e = stop(s); if (e) diagnostic("adc-final-stop", -e, NULL); if (!error) error = e; }
 	pthread_mutex_lock(&s->state_lock); s->service.closing &= ~mask; pthread_mutex_unlock(&s->state_lock);
 	return error;
 }
@@ -203,6 +244,7 @@ work(void *v)
 			s->command_generation[w->pipe] = generation; s->command_epoch[w->pipe] = epoch;
 			int e = n > 0 ? rx_feed(&s->service, w->pipe, data, (size_t)n) : 0;
 			if (e || (n < 0 && n != -ETIMEDOUT && n != -EINTR && n != -ECANCELED && n != -ESTALE)) {
+				diagnostic("worker-command", e ? -e : -n, NULL);
 				pthread_mutex_lock(&s->state_lock); s->mask &= ~(1U << w->pipe); pthread_mutex_unlock(&s->state_lock);
 				(void)rx_close_pipe(&s->service, w->pipe);
 			}
@@ -220,12 +262,14 @@ handle_setup(struct server *s, const struct usbperiph_event *event)
 	reply.stall = rx_usb_setup(event->setup, &mask, &reset) != 0;
 	if (!reply.stall && reset) {
 		int e = close_pipes(s, reset, event->generation, 1);
-		if (e) return e;
+		if (e) { diagnostic("setup-close", -e, event); return e; }
 	} else if (!reply.stall && event->setup[1] == 1) {
 		int e = endpoint_gate(s, 1U << event->setup[2], 1, event->generation);
-		if (e) return e;
+		if (e) { diagnostic("setup-open", -e, event); return e; }
 	}
-	if (ioctl(s->usb, USBPERIPH_IOC_REPLY_SETUP, &reply) < 0) return -errno;
+	if (ioctl(s->usb, USBPERIPH_IOC_REPLY_SETUP, &reply) < 0) {
+		int e = errno; diagnostic("setup-reply", e, event); return -e;
+	}
 	if (!reply.stall) {
 		pthread_mutex_lock(&s->state_lock);
 		s->mask = mask; s->generation = event->generation; pthread_cond_broadcast(&s->changed);
@@ -252,7 +296,10 @@ main(int argc, char **argv)
 	int result = 1;
 	if (argc == 2 && !strcmp(argv[1], "--self-test")) {
 		pthread_t t; void *out = NULL;
-		if (pthread_create(&t, NULL, self_worker, &s) || pthread_join(t, &out) || out != &s) return 1;
+		int e = pthread_create(&t, NULL, self_worker, &s);
+		if (e) { diagnostic("self-test-create", e, NULL); return 1; }
+		e = pthread_join(t, &out);
+		if (e || out != &s) { diagnostic("self-test-join", e ? e : EIO, NULL); return 1; }
 		puts("pluto-iiod: thread startup PASS"); return 0;
 	}
 	if (argc != 5) {
@@ -266,51 +313,63 @@ main(int argc, char **argv)
 	if (errno || !*argv[4] || *end || pid > 65535 || !pid) return 2;
 	(void)rx_adc_init(&s.adc, -1);
 	s.adc.fd = open(argv[2], O_RDONLY);
-	if (s.adc.fd < 0) { perror("ADC open"); goto out; }
+	if (s.adc.fd < 0) { diagnostic("adc-open", errno, NULL); goto out; }
 	/* Apply a real initial configuration before exposing any IIO attributes. */
 	char rate[] = "2400000";
-	if (rx_adc_attr(&s.adc, "iio:device0", "INPUT:voltage0", "sampling_frequency", rate, sizeof(rate), 1)) {
-		fprintf(stderr, "ADC initial configuration/readback failed\n"); goto out;
-	}
+	int error = rx_adc_attr(&s.adc, "iio:device0", "INPUT:voltage0", "sampling_frequency", rate, sizeof(rate), 1);
+	if (error) { diagnostic("adc-initial-config", -error, NULL); goto out; }
 	s.usb = open(argv[1], O_RDWR);
-	if (s.usb < 0) { perror("USB open"); goto out; }
+	if (s.usb < 0) { diagnostic("usb-open", errno, NULL); goto out; }
 	(void)rx_usb_config(&config, (uint16_t)vid, (uint16_t)pid);
-	if (ioctl(s.usb, USBPERIPH_IOC_CONFIGURE, &config) < 0) { perror("USB configure"); goto out; }
-	if (endpoint_gate(&s, 3, 0, 0)) {
-		fprintf(stderr, "USB endpoint admission gates are unavailable\n"); goto out;
+	if (ioctl(s.usb, USBPERIPH_IOC_CONFIGURE, &config) < 0) { diagnostic("usb-configure", errno, NULL); goto out; }
+	if ((error = endpoint_gate(&s, 3, 0, 0))) {
+		diagnostic("initial-gates", -error, NULL); goto out;
 	}
 	rx_init(&s.service, &ops, &s);
 	for (unsigned i = 0; i < 2; i++) {
 		workers[i] = (struct worker){ &s, i };
-		if (pthread_create(&threads[i], NULL, work, &workers[i])) goto shutdown;
+		error = pthread_create(&threads[i], NULL, work, &workers[i]);
+		if (error) { fprintf(stderr, "pluto-iiod: worker=%u\n", i);
+			diagnostic("worker-create", error, NULL); goto shutdown; }
 		created++;
 	}
 	signal(SIGINT, interrupt); signal(SIGTERM, interrupt);
-	if (ioctl(s.usb, USBPERIPH_IOC_CONNECT) < 0) { perror("USB connect"); goto shutdown; }
+	snapshot(&s, "before-connect");
+	if (ioctl(s.usb, USBPERIPH_IOC_CONNECT) < 0) { diagnostic("usb-connect", errno, NULL); goto shutdown; }
+	snapshot(&s, "after-connect");
 	result = 0;
 	while (!interrupted) {
 		struct usbperiph_event event;
 		if (ioctl(s.usb, USBPERIPH_IOC_GET_EVENT, &event) < 0) {
 			if (errno == EINTR || errno == EWOULDBLOCK || errno == ETIMEDOUT) continue;
-			perror("USB event"); result = 1; break;
+			diagnostic("get-event", errno, NULL); snapshot(&s, "event-error"); result = 1; break;
+		}
+		if (s.diagnostic_events < 32) {
+			s.diagnostic_events++;
+			diagnostic("event", 0, &event); snapshot(&s, "event");
 		}
 		if (event.type == USBPERIPH_EVENT_SETUP) {
-			if (handle_setup(&s, &event)) { result = 1; break; }
+			if ((error = handle_setup(&s, &event))) { diagnostic("handle-setup", -error, &event); result = 1; break; }
 		} else if (event.type == USBPERIPH_EVENT_RESET || event.type == USBPERIPH_EVENT_DISCONNECT ||
 		    event.type == USBPERIPH_EVENT_SUSPEND || (event.type == USBPERIPH_EVENT_CONFIGURE && !event.configured)) {
-			if (close_pipes(&s, 3, event.generation, 1)) { result = 1; break; }
+			if ((error = close_pipes(&s, 3, event.generation, 1))) { diagnostic("event-close", -error, &event); result = 1; break; }
 		}
 	}
 shutdown:
 	pthread_mutex_lock(&s.state_lock); s.quitting = 1; s.mask = 0; pthread_cond_broadcast(&s.changed); pthread_mutex_unlock(&s.state_lock);
-	(void)close_pipes(&s, 3, s.generation, 1);
-	for (unsigned i = 0; i < created; i++) (void)pthread_join(threads[i], NULL);
-	(void)rx_disconnect(&s.service);
-	(void)ioctl(s.usb, USBPERIPH_IOC_DISCONNECT);
+	error = close_pipes(&s, 3, s.generation, 1);
+	if (error) diagnostic("shutdown-close", -error, NULL);
+	for (unsigned i = 0; i < created; i++) {
+		error = pthread_join(threads[i], NULL); if (error) diagnostic("worker-join", error, NULL);
+	}
+	error = rx_disconnect(&s.service);
+	if (error) diagnostic("service-disconnect", -error, NULL);
+	if (ioctl(s.usb, USBPERIPH_IOC_DISCONNECT) < 0) diagnostic("usb-disconnect", errno, NULL);
 out:
 	if (s.usb >= 0) close(s.usb);
 	if (s.adc.fd >= 0) close(s.adc.fd);
 	pthread_cond_destroy(&s.changed); pthread_mutex_destroy(&s.adc_lock); pthread_mutex_destroy(&s.state_lock);
 	for (unsigned p = 0; p < 2; p++) { pthread_mutex_destroy(&s.admission[p]); pthread_mutex_destroy(&s.command_lock[p]); }
+	if (result) fprintf(stderr, "pluto-iiod: exit status=%d\n", result);
 	return result;
 }

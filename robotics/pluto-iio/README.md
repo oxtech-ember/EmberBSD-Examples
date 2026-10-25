@@ -34,6 +34,11 @@ The service applies an RX configuration before connecting USB. The initial setti
 are 1090 MHz, 2.4 MSPS requested, 3 MHz RF bandwidth, and slow gain control.
 It refuses startup if the driver cannot return an actual sample rate.
 `--self-test` checks pthread startup without opening a device.
+Startup and fatal errors report the operation and numeric error on stderr.
+Thread errors use the pthread return code. USB event errors include their sequence and generation.
+The service logs at most 32 successful events and their available read-only USB snapshots.
+It also snapshots before and after connect. Error snapshots do not replace the original error.
+Snapshot support is optional when building with older peripheral headers.
 
 One session owns RX1. By default, four DMA blocks feed separately owned user buffers.
 The USB driver copies each buffer again. ADC and USB never share DMA mappings.
