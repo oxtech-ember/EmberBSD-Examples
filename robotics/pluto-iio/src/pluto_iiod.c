@@ -44,7 +44,7 @@ static void
 diagnostic(const char *stage, int error, const struct usbperiph_event *event)
 {
 	int saved = errno;
-	fprintf(stderr, "pluto-iiod: stage=%s error=%d (%s)", stage, error, strerror(error));
+	fprintf(stderr, "pluto-iiod: stage=%s error=%d (%s)", stage, error, error ? strerror(error) : "success");
 	if (event) fprintf(stderr, " event=%u sequence=%" PRIu64 " generation=%" PRIu64 " configured=%u",
 	    event->type, event->sequence, event->generation, event->configured);
 	if (event && event->type == USBPERIPH_EVENT_SETUP)
@@ -194,7 +194,7 @@ cancel_endpoints(const struct server *s, unsigned mask)
 }
 
 static int
-close_pipes(struct server *s, unsigned mask, uint64_t generation, int use_gate)
+close_pipes(struct server *s, unsigned mask, uint64_t generation, int global)
 {
 	int owner_closed, error = 0;
 	pthread_mutex_lock(&s->state_lock);
@@ -202,10 +202,12 @@ close_pipes(struct server *s, unsigned mask, uint64_t generation, int use_gate)
 	s->mask &= ~mask; s->generation = generation; s->service.closing |= mask;
 	for (unsigned p = 0; p < 2; p++) if (mask & (1U << p)) s->epoch[p]++;
 	pthread_mutex_unlock(&s->state_lock);
-	if (use_gate) {
-		error = endpoint_gate(s, mask, 0, generation);
-		if (error) cancel_endpoints(s, mask); /* Clean up, but never ACK this failure. */
-	} else cancel_endpoints(s, mask); /* Bus reset already invalidates generation. */
+	/* Local epochs now reject every old command. Global teardown has no setup
+	 * ACK, and must fence the current kernel lifecycle even if another reset
+	 * advanced its generation after GET_EVENT or between gate calls. Vendor
+	 * CLOSE retains the exact event generation before acknowledging EP0. */
+	error = endpoint_gate(s, mask, 0, global ? 0 : generation);
+	if (error) cancel_endpoints(s, mask); /* Clean up, but never ACK this failure. */
 	if (owner_closed && ioctl(s->adc.fd, ADI_AXI_ADCIOC_STREAM_STOP, (void *)NULL) < 0) {
 		error = -errno; diagnostic("adc-cancel-stop", -error, NULL);
 	}
@@ -261,7 +263,7 @@ handle_setup(struct server *s, const struct usbperiph_event *event)
 	pthread_mutex_lock(&s->state_lock); mask = s->mask; pthread_mutex_unlock(&s->state_lock);
 	reply.stall = rx_usb_setup(event->setup, &mask, &reset) != 0;
 	if (!reply.stall && reset) {
-		int e = close_pipes(s, reset, event->generation, 1);
+		int e = close_pipes(s, reset, event->generation, 0);
 		if (e) { diagnostic("setup-close", -e, event); return e; }
 	} else if (!reply.stall && event->setup[1] == 1) {
 		int e = endpoint_gate(s, 1U << event->setup[2], 1, event->generation);

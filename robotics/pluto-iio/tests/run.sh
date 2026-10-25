@@ -7,10 +7,10 @@ case "$CC" in /*) ;; *) echo 'CC must be absolute' >&2; exit 2;; esac
 dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/pluto-iio.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
-for t in protocol adc usb; do
+for t in protocol adc adc_diagnostic usb; do
     case "$t" in
         protocol) sources="$dir/src/iio_rx.c";;
-        adc) sources="$dir/src/native_adc.c";;
+        adc|adc_diagnostic) sources="$dir/src/native_adc.c";;
         usb) sources="$dir/src/native_usb.c";;
     esac
     "$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
@@ -32,7 +32,7 @@ for scenario in 1 2 3 4 5 6; do "$work/cancel" "$scenario"; done
     -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
     -I"$ABI_INCLUDE" "$dir/tests/startup.c" "$dir/src/iio_rx.c" \
     "$dir/src/native_adc.c" "$dir/src/native_usb.c" -pthread -lm -o "$work/startup"
-for scenario in 1 2 3 4; do "$work/startup" "$scenario"; done
+for scenario in 1 2 3 4 5 6 7; do "$work/startup" "$scenario"; done
 "$CC" -D_DARWIN_C_SOURCE -D_POSIX_C_SOURCE=200809L -std=c11 \
     -Wall -Wextra -Werror ${CFLAGS:-} -I"$dir/src" -I"$dir/tests/include" \
     -I"$ABI_INCLUDE" "$dir"/src/*.c -pthread -lm -o "$work/pluto-iiod"

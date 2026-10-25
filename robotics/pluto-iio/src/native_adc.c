@@ -99,20 +99,47 @@ rx_adc_start(void *v, unsigned samples)
 	return 0;
 }
 
+/* Query on the existing ADC descriptor only. A failed ioctl has no outputs. */
+static ssize_t
+read_error(struct rx_adc *a, int error)
+{
+	int saved = errno;
+	if (a->error_diagnostics < 8) {
+		a->error_diagnostics++;
+		struct adi_axi_adc_stream_status d = {
+			.abi_version = ADI_AXI_ADC_STREAM_ABI_VERSION, .struct_size = sizeof(d)
+		};
+		int e = a->control(a->fd, ADI_AXI_ADCIOC_STREAM_STATUS, &d) < 0 ? errno : 0;
+		if (!e && (d.abi_version != ADI_AXI_ADC_STREAM_ABI_VERSION || d.struct_size != sizeof(d))) e = EPROTO;
+		fprintf(stderr, "pluto-iiod: adc-read error=%d", error);
+		if (e) fprintf(stderr, " status_error=%d\n", e);
+		else fprintf(stderr, " last_error=%d flags=%#x generation=%" PRIu64 " sequence=%" PRIu64
+		    " completed_blocks=%" PRIu64 " completed_bytes=%" PRIu64
+		    " discontinuities=%" PRIu64 " dropped_blocks=%" PRIu64
+		    " block_bytes=%u block_count=%u block_offset=%u ready_blocks=%u sample_rate_hz=%u\n",
+		    d.last_error, d.flags, d.generation, d.sequence, d.completed_blocks, d.completed_bytes,
+		    d.discontinuities, d.dropped_blocks, d.block_bytes, d.block_count, d.block_offset,
+		    d.ready_blocks, d.sample_rate_hz);
+		fflush(stderr);
+	}
+	errno = saved;
+	return -error;
+}
+
 ssize_t
 rx_adc_read(void *v, void *b, size_t n)
 {
 	struct rx_adc *a = v;
 	ssize_t got;
 	int e;
-	if (!a->running) return -EBADF;
+	if (!a->running) return read_error(a, EBADF);
 	got = a->input(a->fd, b, n, a->timeout_ms);
-	if (got < 0) return -errno;
+	if (got < 0) return read_error(a, errno);
 	/* Discard this owned copy if fresh status identifies a loss. */
-	if ((e = status(a)) != 0) return e;
-	if (a->status.last_error) return -a->status.last_error;
+	if ((e = status(a)) != 0) return read_error(a, -e);
+	if (a->status.last_error) return read_error(a, a->status.last_error);
 	if (a->status.discontinuities || (a->status.flags & ADI_AXI_ADC_STREAM_LOSS_UNKNOWN))
-		return -EOVERFLOW;
+		return read_error(a, EOVERFLOW);
 	return got;
 }
 

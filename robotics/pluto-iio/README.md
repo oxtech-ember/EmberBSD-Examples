@@ -39,6 +39,9 @@ Thread errors use the pthread return code. USB event errors include their sequen
 The service logs at most 32 successful events and their available read-only USB snapshots.
 It also snapshots before and after connect. Error snapshots do not replace the original error.
 Snapshot support is optional when building with older peripheral headers.
+The first eight ADC read errors also report fresh stream status on the existing ADC descriptor.
+Failed status queries report their own error and do not expose undefined ioctl outputs.
+These observations retain the original read error and do not prove continuous sampling.
 
 One session owns RX1. By default, four DMA blocks feed separately owned user buffers.
 The USB driver copies each buffer again. ADC and USB never share DMA mappings.
@@ -58,6 +61,9 @@ Close first disables admission in userland and closes both kernel endpoint gates
 The kernel closes each gate before cancel and drain. The service then waits for
 old transfer calls and the closing pipe's command to finish before it acknowledges EP0.
 Responses retain their original command epoch. They cannot acquire a new pipe epoch.
+Global reset, suspend, disconnect, and shutdown close local admission before gating the current kernel generation.
+A bus generation change during teardown therefore cannot turn successful cancellation into a stale-generation failure.
+Vendor OPEN and CLOSE retain the exact setup generation and acknowledge only a successful matching transaction.
 A gate or drain failure receives no successful close acknowledgement.
 Startup tests gate support before CONNECT. Vendor OPEN reopens the selected pair.
 Global RESET closes both pipes; a single CLOSE clears only that pipe's parser.

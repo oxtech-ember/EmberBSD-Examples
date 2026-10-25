@@ -7,7 +7,7 @@
 #include "iio_rx.h"
 struct rx_adc {
 	int fd, running, configured;
-	unsigned timeout_ms, blocks;
+	unsigned timeout_ms, blocks, error_diagnostics;
 	struct adi_axi_adc_config config;
 	struct adi_axi_adc_stream_config stream;
 	struct adi_axi_adc_stream_status status;
