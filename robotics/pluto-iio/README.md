@@ -6,8 +6,10 @@ The peripheral driver must implement `USBPERIPH_IOC_ENDPOINT_GATE`.
 It has no Linux FunctionFS, sysfs, libiio, or compression dependency on the board.
 The runtime dependencies are the base C, math, and pthread libraries.
 
-This is an implementation candidate. USB enumeration, throughput, RF reception,
-SDR++ operation, and decoder acceptance still require physical tests.
+Physical support and limits belong to the
+[Nano profile](https://github.com/oxtech-ember/EmberBSD-DevBoards/blob/main/boards/hamgeek-plutosdr-nano/interfaces.md#native-usb-and-iio-rx).
+One unit has bounded experimental native USB/IIO RX and ADS-B reception evidence.
+SDR++ GUI operation, AIS reception, CPR positions and persistent installation remain unqualified.
 Host tests use synthetic ADC data. They do not prove device support.
 
 ## Build and start
