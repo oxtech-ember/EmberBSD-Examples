@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QHBoxLayout>
 #include <QInputDialog>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -481,6 +482,8 @@ int main(int argc, char **argv)
 	app.setQuitOnLastWindowClosed(false);
 	app.setApplicationName("ember-wifi");
 	app.setOrganizationDomain("emberbsd.org");
+	app.setDesktopFileName("ember-wifi");
+	app.setWindowIcon(QIcon::fromTheme(QStringLiteral("network-wireless")));
 	KDBusService service(KDBusService::Unique);
 	Manager m;
 	QObject::connect(&service, &KDBusService::activateRequested, &m,
