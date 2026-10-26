@@ -16,8 +16,10 @@ During connection or negotiation, refresh reads cached scan results.
 Active scans run only in the disconnected or inactive state.
 This avoids starting a scan that can interrupt an established connection.
 
-The application needs a graphical session with a system tray, Qt 6 Widgets,
-and a running `wpa_supplicant`. Its source uses C++17.
+The application needs a graphical session with a system tray, a session D-Bus,
+Qt 6 Widgets, KDE Frameworks DBusAddons, and a running `wpa_supplicant`. Its
+source uses C++17. It registers one instance per user session; launching it
+again activates the existing window.
 Dependency recipes belong to [Ports](https://github.com/oxtech-ember/EmberBSD-Ports).
 Kernel, radio, and supplicant mechanisms remain in [OS](https://github.com/oxtech-ember/EmberBSD).
 Read [DevBoards](https://github.com/oxtech-ember/EmberBSD-DevBoards) for the exact board's radio support limits.

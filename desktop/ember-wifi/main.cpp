@@ -15,15 +15,16 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
+#include <QPalette>
 #include <QPushButton>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QVBoxLayout>
 
-#include <sys/file.h>
+#include <KDBusService>
+
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -126,9 +127,12 @@ static QIcon wifiIcon(int percent, bool connected)
 	p.setRenderHint(QPainter::Antialiasing);
 	int bars = !connected ? 0 : percent >= 70 ? 4 : percent >= 45 ? 3 :
 	    percent >= 20 ? 2 : 1;
+	const QPalette palette = QApplication::palette();
+	const QColor active = palette.color(QPalette::Active, QPalette::WindowText);
+	const QColor inactive = palette.color(QPalette::Disabled, QPalette::WindowText);
 	QPointF c(32, 54);
 	for (int i = 0; i < 4; i++) {
-		QColor col = i < bars ? QColor(255, 255, 255) : QColor(130, 130, 130);
+		QColor col = i < bars ? active : inactive;
 		if (i == 0) {
 			p.setPen(Qt::NoPen);
 			p.setBrush(col);
@@ -473,16 +477,14 @@ private:
 
 int main(int argc, char **argv)
 {
-	// One instance per machine: the session autostart and a manual start
-	// would otherwise show two tray icons.
-	int lock = ::open("/tmp/ember-wifi.lock", O_RDWR | O_CREAT, 0600);
-	if (lock < 0 || ::flock(lock, LOCK_EX | LOCK_NB) != 0)
-		return 0;
-
 	QApplication app(argc, argv);
 	app.setQuitOnLastWindowClosed(false);
 	app.setApplicationName("ember-wifi");
+	app.setOrganizationDomain("emberbsd.org");
+	KDBusService service(KDBusService::Unique);
 	Manager m;
+	QObject::connect(&service, &KDBusService::activateRequested, &m,
+	    [&m](const QStringList &, const QString &) { m.showWindow(); });
 	if (app.arguments().contains("--show"))
 		QTimer::singleShot(0, &m, [&m] { m.showWindow(); });
 	return app.exec();
