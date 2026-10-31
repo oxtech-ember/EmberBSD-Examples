@@ -12,6 +12,8 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 
 ## Examples
 
+- [LVGL status and touch feedback with wsdisplay and wsmouse](desktop/lvgl-wscons/README.md)
+
 - [Bounded integer and floating-point CPU load](diagnostics/cpu-load/README.md)
 
 - [Desktop Wi-Fi manager using the supplicant control socket](desktop/ember-wifi/README.md)
