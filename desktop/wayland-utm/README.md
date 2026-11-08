@@ -63,7 +63,7 @@ This EGL check does not replace that Vulkan identity check.
 
 Build the existing consumer with the common GCC16 cross compiler. Use the
 application sysroot that supplies the target EGL, GLES2 and GBM headers and
-libraries. Do not use host library paths.
+libraries. Restrict library search paths to that target sysroot.
 
 ```sh
 "$CC" --sysroot="$SYSROOT" -std=c99 -D_NETBSD_SOURCE -Wall -Wextra -Werror \

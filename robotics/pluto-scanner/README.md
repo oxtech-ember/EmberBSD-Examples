@@ -98,14 +98,14 @@ A local file also requires exit status zero. An incomplete serial transfer must 
 
 Bytes retain device order: I low byte, I high byte, Q low byte, Q high byte.
 Each component is signed 12-bit two's complement in a little-endian 16-bit container.
-Sign-extend its low 12 bits before processing; do not assume the upper four bits are sign bits.
+Derive the sign from bit 11 and sign-extend the low 12 bits before processing.
 REQUEST fields contain requested values. ABI1 does not return an actual sample rate.
 The footer confirms finite capture completion, not a measured clock or a TX register snapshot.
 Capture STATUS and a TX-inhibit hardware snapshot remain separate acceptance evidence.
 
 Every invocation has block index zero and declares a discontinuity before its data.
-Keep each block in its own file and decode it independently. Do not concatenate blocks
-into a continuous stream or hide capture gaps through resampling.
+Keep each block in its own file and decode it independently. Preserve the discontinuity
+and capture gaps in any downstream processing.
 The maximum block lasts about 109 ms at 2.4 MSPS, or 85 ms at 3.072 MSPS.
 At 115200 baud with 8N1 framing, its ASCII transfer takes about 4.1 minutes.
 This helper is a finite diagnostic. It does not implement USB streaming.

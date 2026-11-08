@@ -15,7 +15,7 @@ An existing KDE session is saved before GNOME becomes the XDM default.
 - An existing non-root account with a known password and root shell access.
 - `pkgin` configured for the tested package set:
   `https://cdn.netbsd.org/pub/pkgsrc/packages/NetBSD/aarch64/11.0_2026Q2/All`.
-  Do not run another package installer while setup runs.
+  Give this setup exclusive use of the package database until it finishes.
 - NetBSD base compiler and network access to official GNOME source archives.
 
 The compatibility code is specific to this package set. Revalidate it after

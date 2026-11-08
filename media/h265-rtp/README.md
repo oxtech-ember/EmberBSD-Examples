@@ -62,8 +62,8 @@ sh ./run-api.sh case-inputs/fixture.i420 new-results /usr/pkg/bin /usr/pkg
 For a native control, replace the last two arguments with the native build's
 binary directory and media prefix. Ensure the native loader finds that
 prefix's libraries and compiler runtime. An isolated plugin registry is
-created inside each new results directory. Do not run concurrent suites
-on ports 5004/5006. Result paths must be new, and individual consumers also
+created inside each new results directory. Give each suite exclusive use of
+ports 5004/5006 until it completes. Result paths must be new, and individual consumers also
 require fresh decoded/CSV outputs.
 
 ```text
@@ -133,7 +133,7 @@ FFmpeg rejects missing or non-increasing decoded timestamps. GStreamer
 requires valid, nondecreasing PTS within each receiver segment and reports
 `equal_pts`: its default slave jitter buffer can clamp successive local PTS.
 Wire-clock progression remains a separate strict check. Restart creates a
-new local segment; do not compare its PTS epoch to the previous pipeline.
+new local segment; compare PTS values within their respective pipeline epoch.
 
 The GStreamer receiver uses the real jitter buffer, H.265 depayloader/parser,
 libav decoder, conversion and appsink. It requests/waits for a keyframe after

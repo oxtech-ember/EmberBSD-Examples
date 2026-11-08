@@ -147,7 +147,7 @@ CC=/absolute/host-gcc16 ABI_INCLUDE=/absolute/public-abi-include \
 ```
 
 The ABI include directory must contain only the selected public `dev/` headers.
-Do not add an entire kernel `sys/` tree to a host compiler's include search.
+Restrict the host compiler's ABI include search to those selected public headers.
 The test-only `sys/ioccom.h` bridge uses the host ioctl encoding.
 Native builds always use the real EmberBSD header and ioctl values.
 

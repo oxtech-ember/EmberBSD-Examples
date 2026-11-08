@@ -24,7 +24,7 @@ control uses two application threads with independent `ncnn::Net` instances.
 
 ## Build and run
 
-Point CMake at the installed SDK. Do not point it at an ncnn build tree.
+Point CMake at the installed SDK and its packaged ncnn dependency.
 
 ```sh
 cmake -S . -B build -G Ninja \
@@ -60,7 +60,7 @@ shapes and nonfinite results. Each row contains the seed, sample index,
 repeat index, three raw logits and three probabilities. Rows use sample order,
 then repeat order. Repeated runs receive identical input for each sample.
 The applications replace the output atomically after all inference calls pass.
-Failures preserve an existing output file. Output must not alias a model input.
+Failures preserve an existing output file. Choose an output path distinct from every model input, including aliases.
 
 ## Model and independent reference
 

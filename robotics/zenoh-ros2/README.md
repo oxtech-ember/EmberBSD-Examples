@@ -163,8 +163,8 @@ Zenoh keys are `ember/robotics/v1/demo/{state,command,ack}`. Each PUT is exactly
 | 36 | setpoint, int32 |
 | 40 | applied-command count, uint32 |
 
-The controller chooses a random identity at process start. Command timestamps
-must not be in the future or over 1000 ms old on the device's own clock.
+The controller chooses a random identity at process start. Accept command timestamps only in the inclusive interval from 1000 ms before
+the device's current clock value through that current value.
 No wall-clock synchronization is required. IDs must increase within that boot.
 Acknowledgement status: 0 applied, 1 wrong boot, 2 expired/future, 3 replay,
 4 invalid setpoint, 5 exhausted counter. Rejection does not change state.

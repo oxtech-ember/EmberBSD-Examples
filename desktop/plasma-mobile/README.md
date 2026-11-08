@@ -4,8 +4,8 @@
 
 The current port targets stable Plasma Mobile 6.7.5 in
 [EmberBSD Ports](https://github.com/oxtech-ember/EmberBSD-Ports). This old probe
-records an earlier investigation; do not use the binary catalog's age to
-choose the EmberBSD desktop version. KDE 4 setup is retired.
+records an earlier investigation. Choose the EmberBSD desktop version from
+the current common Ports recipe and upstream release policy. KDE 4 setup is retired.
 
 This probe configures the unmodified Plasma Mobile 6.5.2 release on
 EmberBSD/NetBSD. Version 6.5.2 matches the Plasma libraries in the tested

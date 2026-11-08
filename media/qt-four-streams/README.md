@@ -82,7 +82,7 @@ ruby make-fixtures.rb "$NATIVE_FFMPEG" \
 ```
 
 Use a native FFmpeg with the current `libx265` encoder.
-Do not pass a cross-compiled generator to this host-side runner.
+Pass a native generator built for the host to this runner.
 The default fixtures are four 2048×1500, 36-frame, 9 fps MP4 files.
 For a small diagnostic run, add `64x64:36:9` as the fourth argument.
 Each generator streams I420 through Ruby into one actual FFmpeg process.
@@ -107,7 +107,7 @@ qt-four-streams --accept results \
     fixtures/channel2.mp4 fixtures/channel3.mp4
 ```
 
-`results` must not exist. The program writes `report.json`, `frames.csv`
+Choose a new `results` directory. The program writes `report.json`, `frames.csv`
 and a final `window.png`. It also writes the JSON report to standard output.
 The report records actual Qt errors, metadata, frame dimensions and formats,
 source timestamps, library paths, loaded libraries, EOF and display exposure.

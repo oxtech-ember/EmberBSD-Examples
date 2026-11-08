@@ -7,7 +7,7 @@ It checks all 307200 RGB pixels and all alpha values before it saves a PPM file.
 The QML reference and the C++ expected channel values are independent inputs.
 
 Build on the developer host. Use the shared GCC16 and an EmberBSD application
-sysroot that supplies Qt 6 Quick, Gui, Qml and DBus. Do not build on the board.
+sysroot that supplies Qt 6 Quick, Gui, Qml and DBus. Keep compilation on the development host.
 
 ```sh
 CXX=/path/to/aarch64--netbsd-g++ SYSROOT=/path/to/sysroot \
@@ -17,7 +17,7 @@ CXX=/path/to/aarch64--netbsd-g++ SYSROOT=/path/to/sysroot \
 Run in a private D-Bus session with a KWin Wayland virtual output of 640 by 480.
 Use scale 1. Use the same accepted Mesa and driver cohort for KWin and the client.
 First require the hardware renderer in `org.kde.KWin.supportInformation`.
-Do not accept a compositor fallback to QPainter or a software GL renderer.
+Accept this hardware-rendering check only with the required hardware renderer; report QPainter or software GL as a failed requirement.
 The helper separately checks its own client renderer.
 
 ```sh
@@ -31,7 +31,7 @@ It selects the basic Qt Quick render loop and requests a real GLES2 context.
 It does not change Mesa feature bits or the compositor renderer.
 KWin Screenshot2 must be available on the same session bus.
 Use this only in the compositor session that you intend to capture.
-The output path must not exist. The helper does not replace an existing file.
+Choose a new output path. The helper does not replace an existing file.
 A failed capture or pixel mismatch returns a nonzero status.
 
 The API transfers a Unix descriptor through Qt D-Bus. Qt duplicates the local
@@ -53,6 +53,6 @@ colour channels without texture edges. The QML colour table and C++ channel
 values remain independent. The default quadrant check stays exact.
 
 KWin can use linear texture filtering. A quadrant edge can expose sampling
-precision even when both uniform regions are correct. Do not change the
-quadrant reference to match a measured result. Report uniform-frame acceptance
+precision even when both uniform regions are correct. Preserve the independent
+quadrant reference when assessing measured results. Report uniform-frame acceptance
 and quadrant-edge precision as separate results.

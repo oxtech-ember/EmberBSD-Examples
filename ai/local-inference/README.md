@@ -45,7 +45,7 @@ AI_BIN=/usr/pkg/bin sh smoke.sh /var/tmp/ember-ai-models /var/tmp/ember-ai-resul
 ```
 
 For the isolated Ports installation, set `AI_BIN` to its `runtime/bin` directory.
-The result directory must not already exist. Default settings are two threads,
+Choose a new result directory. Default settings are two threads,
 512 tokens of context, and port 18080 on `127.0.0.1`. Override `AI_THREADS` or
 `AI_PORT` as needed. The script checks for a responding service before starting
 its server, uses a unique model alias, and stops its own process on exit.
