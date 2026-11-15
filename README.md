@@ -3,6 +3,9 @@
 Standalone examples for [EmberBSD](https://github.com/oxtech-ember/EmberBSD),
 a NetBSD-derived Unix for intelligent devices.
 
+Read the [EmberBSD Developer Guide](https://github.com/oxtech-ember/EmberBSD-Docs/blob/main/development/README.md)
+for application development and the owners of shared mechanisms.
+
 ## Purpose
 
 This repository turns EmberBSD capabilities into small, reproducible user
