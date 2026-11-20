@@ -16,7 +16,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 ## Examples
 
 - [LVGL status and touch feedback with wsdisplay and wsmouse](desktop/lvgl-wscons/README.md)
-- [A small weather screen with Qt Quick and LVGL on the Mosaico build path](desktop/mosaico-weather/README.md)
+- [A small weather screen with EmberBSD QML, Qt Quick and LVGL on Mosaico](desktop/mosaico-weather/README.md)
 
 - [Bounded integer and floating-point CPU load](diagnostics/cpu-load/README.md)
 
@@ -58,7 +58,7 @@ central project and the entry point for the ecosystem.
 - [EmberBSD](https://github.com/oxtech-ember/EmberBSD) — OS subsystems, drivers, source build rules, and executable checks.
 - [EmberBSD-DevBoards](https://github.com/oxtech-ember/EmberBSD-DevBoards) — hardware, SoCs, bootloaders, layouts, and current support limits.
 - [EmberBSD-Ports](https://github.com/oxtech-ember/EmberBSD-Ports) — third-party recipes, patches and native dependencies used by examples.
-- [EmberBSD-Runtime](https://github.com/oxtech-ember/EmberBSD-Runtime) — application execution and device operations; design stage.
+- [EmberBSD-Runtime](https://github.com/oxtech-ember/EmberBSD-Runtime) — embedded QML rendering and planned application lifecycle APIs.
 - [EmberBSD-SDK](https://github.com/oxtech-ember/EmberBSD-SDK) — common build orchestration, sysroots, release kits, and development tools; stable application contracts remain in design.
 - [Ember-Agent-Skills](https://github.com/oxtech-ember/Ember-Agent-Skills) — portable developer skills for AI coding assistants and tested contributions.
 

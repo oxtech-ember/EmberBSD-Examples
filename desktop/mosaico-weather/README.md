@@ -1,13 +1,14 @@
 # Mosaico weather build comparison
 
-One 480 × 480 screen shows a fixed sample reading of 21 C and sunny weather.
-Both layouts use the same text, colors, positions and 14-pixel font size.
+The 480 × 480 weather screen starts at 21 C and sunny. Its implementations
+use the same labels, colors, positions and 14-pixel font size.
 Qt uses the host's default font for the captured frame. The RV32 LVGL package
 uses its bundled Montserrat font. The examples work offline.
 
 | Build | Where the UI is drawn | Output |
 | --- | --- | --- |
 | Qt Quick | Qt Quick evaluates `Weather.qml` and draws it on the target. | `weather-quick` with the QML engine, software renderer and platform plugin linked into the static RV32 build |
+| EmberBSD QML | The SDK compiles `Weather.qml` into a C scene. EmberBSD Runtime draws it on the target when model values change. | Standalone `weather-qml` ELF with an RGB565 scanline renderer |
 | Captured QML frame | Native Qt Quick draws Weather.qml at build time. The RV32 program expands the resulting RGB565 runs one row at a time. | Standalone `weather-frame` ELF |
 | LVGL | LVGL creates and renders the labels on the target using a 16-line draw buffer. | Standalone `weather-lvgl` ELF |
 
@@ -44,6 +45,28 @@ wsdisplay device, for example `./weather-lvgl /dev/ttyE0` or
 `./weather-frame /dev/ttyE0`. Each draws the static scene and sleeps until
 SIGINT, SIGTERM or SIGHUP. On exit it restores the saved display mode.
 Neither program needs a touch device.
+
+### Build the same QML with EmberBSD
+
+Select the RV32 sysroot and runtime archives as above. Set `EMBER_SDK_SOURCE`
+to the [EmberBSD SDK checkout](https://github.com/oxtech-ember/EmberBSD-SDK)
+and `EMBER_RUNTIME_SOURCE` to the [Runtime checkout](https://github.com/oxtech-ember/EmberBSD-Runtime).
+Use absolute paths. The generator uses the SDK's host Python, and the target
+links C, the scene and the RGB565 renderer. This path works without Qt or LVGL.
+
+```sh
+sh build.sh qml
+wc -c "$OUT/weather-qml"
+```
+
+Copy the resulting ELF to the board, open a terminal connected to the device
+and run `./weather-qml /dev/ttyE0`. It displays the initial value from QML.
+Type `-8` and press Enter to update the center label. Each `presented` line
+acknowledges a completed render. EOF or Ctrl-C restores the previous display
+mode. For a standalone display, `weather-qml --hold /dev/ttyE0 </dev/null`
+keeps the last reading until SIGTERM, SIGINT or SIGHUP. The application uses 960 bytes of scanline storage at this resolution
+and a 32-bit value for the temperature, in addition to the system framebuffer
+and process memory. See the [compiler's language profile](https://github.com/oxtech-ember/EmberBSD-SDK/blob/main/docs/qml.md).
 
 ### Build the same QML as a Qt application
 
@@ -112,7 +135,7 @@ The native Qt offscreen test checks the background and visible temperature,
 exports the frame, changes the QML temperature property to −8 and checks
 that the label is redrawn. The native executable also starts its event loop.
 
-All three programs were cross-linked as static RV32 ILP32 soft-float ELF
+All four programs were cross-linked as static RV32 ILP32 soft-float ELF
 executables. The Qt Quick build contains the compiled `Weather.qml` module,
 Qt Quick, the QML engine, the static imports and the bsdfb platform plugin.
 The target Qt prefix used the EmberBSD RV32 C foundation with static libc++,
@@ -122,9 +145,19 @@ in addition to the C foundation.
 | RV32 build | Stripped executable size |
 | --- | ---: |
 | Qt Quick 6.12.0 | 16,730,652 bytes |
+| EmberBSD QML, including renderer, display backend and static libc | 505,052 bytes |
 | LVGL 9.6.0 | 992,984 bytes |
 | Captured QML frame | 506,872 bytes |
 | Empty C main with the same C startup and libc | 498,664 bytes |
+
+The EmberBSD QML executable is 6,388 bytes larger than the empty C
+executable with the same startup and libc. Both the model and the text are
+evaluated on the target. In the full Qt Quick link the object for the QML
+scene itself accounts for about 20.5 kB. The large contributors are Qt Quick,
+Qt Core, Qt QML and Qt GUI. With the same Qt archives, omitting link-time
+section garbage collection increased the stripped ELF by 1,322,016 bytes.
+Safe identical code folding produced the same file size; changing only the
+application to `-Oz` increased it by 512 bytes.
 
 Disabling Qt Core's localized time zone names in this target prefix
 (`-DFEATURE_timezone_locale=OFF`) saved 3,920,896 bytes in the linked
@@ -133,6 +166,17 @@ executable. The scene displays no times or dates. The font subset adds
 partition used on the test board. Qt Quick target rendering and peak RAM use
 have yet to be measured. The LVGL and captured-frame executables include
 their text rendering data.
+
+### Embedded QML acceptance
+
+The RV32 binary compiled from the unchanged `Weather.qml` was run on a
+Mosaico V1.2. The process reported a completed initial presentation and a
+second presentation after reading `-8` from stdin. An RSS sample after the
+second render was **468 KiB**. This is one process sample, not peak memory
+or the total RAM used by the OS and display. A host render of the same
+generated scene changed 12 rows within the central label; all other rows
+matched. The tested ELF SHA-256 was
+`82431333c028e8897f487b78fa24feb0cd161d5164edb58917abb517620f86ee`.
 
 ### Physical LVGL acceptance
 

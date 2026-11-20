@@ -27,11 +27,19 @@ frame)
 	"$HOST_PREFIX/bin/pnmtopng" weather.ppm >weather.png
 	set -- frame -I.
 	;;
+qml)
+	: "${EMBER_SDK_SOURCE:?select the EmberBSD SDK source}"
+	: "${EMBER_RUNTIME_SOURCE:?select the EmberBSD Runtime source}"
+	runtime="$EMBER_RUNTIME_SOURCE/qml"
+	set -- qml "-I$runtime"
+	"$HOST_PREFIX/bin/python3.15" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" \
+	    "$src/Weather.qml" -o weather-scene.c
+	;;
 lvgl)
 	: "${LVGL_PREFIX:?select the RV32 LVGL package prefix}"
 	set -- lvgl -DLV_CONF_INCLUDE_SIMPLE -DLV_KCONFIG_IGNORE "-I$LVGL_PREFIX/include"
 	;;
-*) echo 'usage: build.sh quick|frame|lvgl' >&2; exit 2 ;;
+*) echo 'usage: build.sh quick|frame|lvgl|qml' >&2; exit 2 ;;
 esac
 variant=$1
 shift
@@ -43,12 +51,22 @@ cc() {
 	    -Oz -ffunction-sections -fdata-sections "$@"
 }
 # Each variant can be built independently in the same directory.
-cc -Wall -Wextra -Werror -c "$src/weather-display.c" -o "display-$variant.o"
+if [ "$variant" = qml ]; then
+	for unit in eqml eqml_wsdisplay; do
+		cc -Wall -Wextra -Werror "$@" -c "$runtime/$unit.c" -o "$unit.o"
+	done
+	cc -Wall -Wextra -Werror "$@" -c weather-scene.c -o weather-scene.o
+else
+	cc -Wall -Wextra -Werror -c "$src/weather-display.c" -o "display-$variant.o"
+fi
 cc -Wall -Wextra -Werror "$@" -c "$src/weather-$variant.c" -o "$variant.o"
-set --
-if [ "$variant" = lvgl ]; then set -- "$LVGL_PREFIX/lib/liblvgl.a"; fi
+case "$variant" in
+qml) set -- eqml.o eqml_wsdisplay.o weather-scene.o ;;
+lvgl) set -- display-lvgl.o "$LVGL_PREFIX/lib/liblvgl.a" ;;
+frame) set -- display-frame.o ;;
+esac
 lib="$SYSROOT/usr/lib"
 cc --ld-path="$HOST_PREFIX/bin/ld.lld" -static -nostdlib -Wl,--gc-sections,-s \
     -o "weather-$variant" "$lib/crt0.o" "$lib/crti.o" "$lib/crtbegin.o" \
-    "display-$variant.o" "$variant.o" -Wl,--start-group "$@" "$lib/libc.a" \
+    "$variant.o" -Wl,--start-group "$@" "$lib/libc.a" \
     "$BUILTINS" "$UNWIND" -Wl,--end-group "$lib/crtend.o" "$lib/crtn.o"
