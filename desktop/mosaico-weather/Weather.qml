@@ -3,6 +3,9 @@
 import QtQuick
 
 Rectangle {
+    id: weather
+    property int temperatureC: 21
+
     width: 480
     height: 480
     color: "#122230"
@@ -17,7 +20,7 @@ Rectangle {
 
     Text {
         anchors.centerIn: parent
-        text: "21 C"
+        text: weather.temperatureC + " C"
         color: "#ffffff"
         font.pixelSize: 14
     }

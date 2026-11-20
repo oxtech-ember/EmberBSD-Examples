@@ -6,6 +6,16 @@ src=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 mkdir -p "$OUT"
 cd "$OUT"
 case "${1:-}" in
+quick)
+	: "${RV32_QT_PREFIX:?select a Qt Quick installation built for EmberBSD RV32}"
+	"$HOST_PREFIX/bin/cmake" -S "$src" -B qt-quick-rv32 -G Ninja \
+	    -DCMAKE_MAKE_PROGRAM="$HOST_PREFIX/bin/ninja" \
+	    -DCMAKE_TOOLCHAIN_FILE="$RV32_QT_PREFIX/lib/cmake/Qt6/qt.toolchain.cmake" \
+	    -DQT_HOST_PATH="$HOST_PREFIX/qt6" -DCMAKE_BUILD_TYPE=MinSizeRel
+	"$HOST_PREFIX/bin/cmake" --build qt-quick-rv32 --target weather-quick
+	"$HOST_PREFIX/bin/llvm-strip" -o weather-quick qt-quick-rv32/weather-quick
+	exit 0
+	;;
 frame)
 	qt="$HOST_PREFIX/qt6"
 	"$qt/bin/qmllint" "$src/Weather.qml"
@@ -21,7 +31,7 @@ lvgl)
 	: "${LVGL_PREFIX:?select the RV32 LVGL package prefix}"
 	set -- lvgl -DLV_CONF_INCLUDE_SIMPLE -DLV_KCONFIG_IGNORE "-I$LVGL_PREFIX/include"
 	;;
-*) echo 'usage: build.sh frame|lvgl' >&2; exit 2 ;;
+*) echo 'usage: build.sh quick|frame|lvgl' >&2; exit 2 ;;
 esac
 variant=$1
 shift

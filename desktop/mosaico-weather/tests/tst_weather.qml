@@ -23,5 +23,10 @@ TestCase {
                 ink = Qt.colorEqual(frame.pixel(x, y), "#ffffff")
         verify(ink, "The temperature must be visible")
         frame.save("weather.bmp")
+
+        scene.temperatureC = -8
+        waitForRendering(scene)
+        verify(!frame.equals(grabImage(scene)), "Updating the temperature must redraw the label")
+        scene.temperatureC = 21
     }
 }

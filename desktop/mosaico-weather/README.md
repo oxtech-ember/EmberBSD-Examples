@@ -7,9 +7,15 @@ uses its bundled Montserrat font. The examples work offline.
 
 | Build | Where the UI is drawn | Output |
 | --- | --- | --- |
-| Qt Quick | Qt Quick renders Weather.qml on the system running the application. | `weather-quick` plus that system's Qt libraries and platform plugin |
+| Qt Quick | Qt Quick evaluates `Weather.qml` and draws it on the target. | `weather-quick` with the QML engine, software renderer and platform plugin linked into the static RV32 build |
 | Captured QML frame | Native Qt Quick draws Weather.qml at build time. The RV32 program expands the resulting RGB565 runs one row at a time. | Standalone `weather-frame` ELF |
 | LVGL | LVGL creates and renders the labels on the target using a 16-line draw buffer. | Standalone `weather-lvgl` ELF |
+
+The [BSD 2-Clause license](LICENSE) covers the example's own QML, C and C++
+sources. The Qt Quick build uses the open-source Qt 6 modules from
+[Qt Base](https://code.qt.io/cgit/qt/qtbase.git/) and
+[Qt Declarative](https://code.qt.io/cgit/qt/qtdeclarative.git/).
+Those modules retain their respective [Qt licenses](https://doc.qt.io/qt-6/licensing.html).
 
 ### Build the RV32 programs
 
@@ -52,10 +58,49 @@ With native Qt installed in the Ports prefix, run from this directory:
 "$OUT/qt-quick-host/weather-quick"
 ```
 
-The Qt application links Qt Quick and loads the compiled resource on startup.
-Running it on EmberBSD RV32 requires Qt Core, Gui, Qml and Quick for that ABI
-and a working display plugin. The executable size of the shared-library host
-build excludes those dependencies.
+The Qt application links Qt Quick and loads the embedded QML module at startup.
+For the RV32 build, set `RV32_QT_PREFIX` to the staging prefix of the target
+Qt installation. The build uses its Qt toolchain file, the native Qt from
+`HOST_PREFIX` for code generation, and writes a stripped executable to `OUT`:
+
+```sh
+sh build.sh quick
+wc -c "$OUT/weather-quick"
+```
+
+The target Qt installation supplies Qt Core, Gui, Qml, Quick, the QtQuick
+import and the bsdfb platform plugin. The widget-free example uses the Qt
+Quick software renderer and a font available to the target font database.
+For the measured prefix, Qt Base and Qt Declarative came from EmberBSD Ports.
+Both used static MinSizeRel builds for RV32IMAC/ILP32. Qt Base used target
+zlib, 16-bit PCRE2, double-conversion and FreeType. Qt Declarative used the
+matching native Qt tools (including `qsb`) and was built with
+`FEATURE_qml_jit=OFF`. Static linking imports the QML plugins found by
+`qmlimportscanner`, including QtQuick, QtQml and QtQml.Models.
+For a wsdisplay device, select the software backend and point Qt at a directory
+containing an installed TrueType or OpenType font:
+
+```sh
+QT_QPA_PLATFORM=bsdfb:fb=/dev/ttyE0 QT_QUICK_BACKEND=software \
+    QT_QPA_FB_DISABLE_INPUT=1 QT_QPA_FONTDIR="$PWD/fonts" ./weather-quick
+```
+
+For a small test image, the native HarfBuzz tool can subset an existing
+DejaVu Sans font to the characters used by this sample. Install the resulting
+font and its original license together in the `fonts` directory beside the
+executable:
+
+```sh
+mkdir -p fonts
+"$HOST_PREFIX/bin/hb-subset" "$DEJAVU_SANS_TTF" --text='MOSAICO SUNNY -0123456789C' \
+    --output-file=fonts/WeatherSans.ttf
+cp "$DEJAVU_LICENSE" fonts/LICENSE-DejaVu
+```
+
+The measured RV32 profile uses static Qt 6.12, the QML interpreter, the
+software scene graph, FreeType and the RGB565 wsdisplay platform plugin.
+The app imports `QtQuick`. It uses neither Qt Quick Controls nor image format
+plugins. In a shared build, measure the libraries and plugins separately.
 
 For Qt Quick Ultralite, the same directory provides `Weather.qmlproject`.
 Select `-DWEATHER_USE_QUL=ON` with the Qt for MCUs SDK, its RV32 toolchain
@@ -64,14 +109,27 @@ configuration and a Mosaico platform port. See the [platform prerequisites](../m
 ### Validation
 
 The native Qt offscreen test checks the background and visible temperature,
-then exports the real frame. Both standalone programs were cross-linked for
-EmberBSD RV32. Their first physical display run and the target Qt Quick and
-Ultralite builds remain open. The frame viewer measures the cost of shipping
-a static QML-designed screen. Measuring an on-device QML engine requires the
-target Qt or Ultralite build and its dependencies.
+exports the frame, changes the QML temperature property to −8 and checks
+that the label is redrawn. The native executable also starts its event loop.
 
-With the Mosaico RV32 C foundation, Qt 6.12.0 on the build host and the
-LVGL 9.6.0 target archive, the stripped frame viewer was 506,872 bytes and
-the LVGL executable was 992,984 bytes. An empty C main linked with the same
-startup files and static libraries was 498,664 bytes. These are file sizes.
-The 2,788-byte `Weather.qmlc` needs a matching Qt runtime.
+All three programs were cross-linked as static RV32 ILP32 soft-float ELF
+executables. The Qt Quick build contains the compiled `Weather.qml` module,
+Qt Quick, the QML engine, the static imports and the bsdfb platform plugin.
+The target Qt prefix used the EmberBSD RV32 C foundation with static libc++,
+libc++abi and libunwind. The build requires a target Qt Quick installation
+in addition to the C foundation.
+
+| RV32 build | Stripped executable size |
+| --- | ---: |
+| Qt Quick 6.12.0 | 16,730,652 bytes |
+| LVGL 9.6.0 | 992,984 bytes |
+| Captured QML frame | 506,872 bytes |
+| Empty C main with the same C startup and libc | 498,664 bytes |
+
+Disabling Qt Core's localized time zone names in this target prefix
+(`-DFEATURE_timezone_locale=OFF`) saved 3,920,896 bytes in the linked
+executable. The scene displays no times or dates. The font subset adds
+7,580 bytes. The resulting Qt application exceeds the 10 MiB LittleFS
+partition used on the test board. On-device rendering and peak RAM use
+have yet to be measured. The LVGL and captured-frame executables include
+their text rendering data.

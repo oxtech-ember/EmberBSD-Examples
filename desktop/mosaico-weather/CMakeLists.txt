@@ -18,4 +18,6 @@ else()
         QML_FILES Weather.qml
     )
     target_link_libraries(weather-quick PRIVATE Qt6::Quick)
+    # The scene draws rectangles and text without loading external images.
+    qt_import_plugins(weather-quick EXCLUDE_BY_TYPE imageformats)
 endif()
