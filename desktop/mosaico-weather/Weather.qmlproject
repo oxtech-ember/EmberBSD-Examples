@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: BSD-2-Clause
+import QmlProject 1.3
+
+Project {
+    mainFile: "Weather.qml"
+    QmlFiles { files: ["Weather.qml"] }
+}

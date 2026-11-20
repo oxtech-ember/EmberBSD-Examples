@@ -16,6 +16,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 ## Examples
 
 - [LVGL status and touch feedback with wsdisplay and wsmouse](desktop/lvgl-wscons/README.md)
+- [A small weather screen with Qt Quick and LVGL on the Mosaico build path](desktop/mosaico-weather/README.md)
 
 - [Bounded integer and floating-point CPU load](diagnostics/cpu-load/README.md)
 
