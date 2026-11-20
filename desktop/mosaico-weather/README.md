@@ -130,6 +130,18 @@ Disabling Qt Core's localized time zone names in this target prefix
 (`-DFEATURE_timezone_locale=OFF`) saved 3,920,896 bytes in the linked
 executable. The scene displays no times or dates. The font subset adds
 7,580 bytes. The resulting Qt application exceeds the 10 MiB LittleFS
-partition used on the test board. On-device rendering and peak RAM use
+partition used on the test board. Qt Quick target rendering and peak RAM use
 have yet to be measured. The LVGL and captured-frame executables include
 their text rendering data.
+
+### Physical LVGL acceptance
+
+On EmberBSD Mosaico, the 992,984-byte RV32 LVGL executable was copied to
+`/tmp` and byte-for-byte read back over the pinned SSH connection before it
+was run as `weather-lvgl /dev/ttyE0`. The 480 × 480 RGB565 display showed
+`MOSAICO`, `21 C` and `SUNNY`; the program stayed active with the scene on
+screen. The tested executable had SHA-256
+`35981671ad01d15f9503138bb1e93d522d480cbff7e3aab072cf588517ea3988`.
+This is physical acceptance of the LVGL build only. `weather-quick` has been
+built and host-validated, but has not been run on Mosaico; Qt Quick's target
+rendering and peak memory use remain unverified.
