@@ -172,8 +172,8 @@ their text rendering data.
 The [`qml-qt-tests`](../qml-qt-tests/README.md) suite runs three unchanged Qt
 Declarative 6.12 scenes through the real SDK compiler and EmberBSD Runtime,
 then compares every RGB565 pixel with an independent Qt Quick offscreen frame.
-It also verifies that the unsupported interactive `MouseArea` sample fails
-with a source-local diagnostic before C generation. The target framebuffer and
+The interactive `MouseArea` example compares press, coordinate mapping,
+click, hold and bounded drag with Qt Quick. The target framebuffer and
 touch path remain outside this host test.
 
 ### Embedded QML acceptance

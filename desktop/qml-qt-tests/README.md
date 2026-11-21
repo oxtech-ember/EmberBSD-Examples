@@ -1,7 +1,7 @@
 # QML-to-Qt Quick pixel integration tests
 
 This test ties together the implemented SDK QML compiler, the experimental
-EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Three fixtures exercise the supported profile. A fourth exercises a compiler diagnostic.
+EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Three static fixtures compare RGB565 frames. A fourth compares pointer event handling.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -18,11 +18,13 @@ Grid spacing/centering:
 - `grid-spacing.qml` puts four fixed-size rectangles in a centered two-column
   Grid and checks each tile and the spacing gap.
 
-The unchanged `mousearea.qml` is an explicitly unsupported interactive case.
-Qt Quick accepts it; the SDK compiler must reject its first unsupported grouped
-`anchors` property with a source-local diagnostic and create no generated C
-file. SDK tests separately assert the unsupported `MouseArea` type. This input
-is not counted as a render test.
+The unchanged `mousearea.qml` exercises translated text, pointer coordinates,
+containsPress opacity, click, hold and bounded drag. A Qt Quick test driver
+delivers real window-system test events to the compiled Qt implementation and
+reads the QML object properties. A separate C trace sends the corresponding
+input to the EmberBSD runtime and reads its scene. The host test compares the
+two results. The embedded bitmap font has its own metrics, so this fixture
+compares interaction and geometry rather than glyph pixels.
 
 ## Run
 
@@ -51,3 +53,13 @@ Quick's output. A separate RV32 test on one ESP-Mosaico V1.2 produced the Qt
 reference CRC32 for each of the three frames. The board also presented
 `visualparent2.qml` through wsdisplay.
 [Device measurements](https://github.com/oxtech-ember/EmberBSD-DevBoards/blob/1c7cef575ecc10e67a84598642da0693a24a556e/boards/esp-mosaico/evidence/qml-qt-reference-scenes.json).
+
+## Physical MouseArea run
+
+[Build and run the RV32 application](device/README.md). With the unmodified
+upstream QML on one Mosaico V1.2, CST92xx touch input reached the red
+MouseArea: its original `onPressed` handler logged `Pressed (LeftButton
+shift=false)`. Leaving while pressed and releasing inside produced distinct
+exit messages. The blue rectangle moved from (190, 10) to (194, 61) and then
+(200, 89). The operator confirmed the application was working. The host
+trace separately checks the resulting click, hold and double-click labels.

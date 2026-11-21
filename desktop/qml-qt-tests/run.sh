@@ -22,7 +22,7 @@ fi
     -DCMAKE_PREFIX_PATH="$QT_HOST_PREFIX" \
     -DCMAKE_MAKE_PROGRAM="$NINJA" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=MinSizeRel "$@"
-"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference
+"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference qt_mousearea
 for scene in visualparent visualparent2 grid-spacing; do
     case "$scene" in
     visualparent) width=320; height=480; symbol=visualparent ;;
@@ -47,22 +47,17 @@ for scene in visualparent visualparent2 grid-spacing; do
     "$PYTHON" "$src/compare_frames.py" "$scene" "$runtime_frame" "$qt_frame" "$width" "$height"
 done
 
-# Qt Quick accepts this complete interactive example. Keep its expected
-# compiler rejection separate from pixel-render tests.
+# Compare the actual property changes of the untouched interactive QML.
 mousearea_input="$src/upstream/qtdeclarative-v6.12.0/mousearea.qml"
+"$PYTHON" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" "$mousearea_input" \
+    --name mousearea --output "$OUT/generated/mousearea.c"
+"$CC" -std=c11 -Wall -Wextra -Werror -I"$EMBER_RUNTIME_SOURCE/qml" \
+    "$src/mousearea_trace.c" "$OUT/generated/mousearea.c" "$EMBER_RUNTIME_SOURCE/qml/eqml.c" \
+    "$EMBER_RUNTIME_SOURCE/qml/eqml_input.c" -o "$OUT/mousearea-trace"
+"$OUT/mousearea-trace" >"$OUT/mousearea-runtime.txt"
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_SCALE_FACTOR=1 \
     QT_QPA_PLATFORM_PLUGIN_PATH="$QT_HOST_PREFIX/plugins/platforms" \
     QT_PLUGIN_PATH="$QT_HOST_PREFIX/plugins" QML2_IMPORT_PATH="$QT_HOST_PREFIX/qml" \
-    "$OUT/qt-reference-build/qt_reference" "$mousearea_input" \
-    "$OUT/frames/mousearea-qt.rgb565" 320 480
-
-negative="$OUT/generated/mousearea.c"
-"$PYTHON" -c 'from pathlib import Path; import sys; Path(sys.argv[1]).unlink(missing_ok=True)' "$negative"
-if "$PYTHON" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" \
-    "$mousearea_input" \
-    --name mousearea --output "$negative" >"$OUT/mousearea.stdout" 2>"$OUT/mousearea.stderr"; then
-    echo "FAIL: unsupported interactive QML unexpectedly compiled" >&2
-    exit 1
-fi
-"$PYTHON" "$src/check_unsupported.py" "$OUT/mousearea.stderr" "$negative" \
-    mousearea.qml "unsupported object or grouped property anchors"
+    "$OUT/qt-reference-build/qt_mousearea" "$mousearea_input" >"$OUT/mousearea-qt.txt"
+diff -u "$OUT/mousearea-qt.txt" "$OUT/mousearea-runtime.txt"
+cat "$OUT/mousearea-runtime.txt"
