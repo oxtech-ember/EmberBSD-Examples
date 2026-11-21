@@ -15,17 +15,24 @@
 #include <unistd.h>
 
 #include "camera.h"
+#include "answer.h"
+#include "ask-image.h"
 #include "eqml_input.h"
 #include "eqml_wsdisplay.h"
 #include "eqml_wsmouse.h"
 #include "guide.h"
 #include "sparkworkshop.h"
+#include "temp-path.h"
 #include "view.h"
 
 enum action {
 	ACTION_NONE, ACTION_OPEN, ACTION_BACK, ACTION_NEXT, ACTION_DONE,
-	ACTION_CAMERA, ACTION_CAPTURE, ACTION_RETAKE, ACTION_USE, ACTION_CANCEL
+	ACTION_CAMERA, ACTION_CAPTURE, ACTION_RETAKE, ACTION_USE, ACTION_CANCEL,
+	ACTION_ASK, ACTION_ANSWER_BACK, ACTION_ANSWER_PREVIOUS,
+	ACTION_ANSWER_NEXT, ACTION_ANSWER_RETRY
 };
+
+enum ask_state { ASK_IDLE, ASK_RUNNING, ASK_READY, ASK_FAILED };
 
 struct capture_result {
 	int result;
@@ -35,7 +42,8 @@ struct capture_result {
 struct photo {
 	uint16_t *pixels;
 	struct eqml_bitmap bitmap;
-	char bmp_path[64];
+	char *bmp_path;
+	uint64_t generation;
 };
 
 struct app {
@@ -47,13 +55,26 @@ struct app {
 	struct photo pending;
 	uint16_t *line;
 	const char *camera_device;
-	char bmp_path[64];
+	const char *temp_dir;
+	char *bmp_path;
 	int bmp_fd, reply_fd;
 	pid_t child;
 	unsigned int step;
 	enum action action;
 	struct capture_result reply;
 	size_t reply_size;
+	pid_t ask_child;
+	int ask_fd;
+	const char *agent_lua, *ask_script, *ask_config;
+	char ask_output[WORKSHOP_ANSWER_MAX_BYTES + 3];
+	size_t ask_size;
+	uint64_t ask_generation, ask_current_generation;
+	uint64_t photo_generation;
+	uint64_t ask_photo_generation;
+	unsigned int ask_step;
+	enum ask_state ask_state;
+	struct workshop_answer answer;
+	size_t answer_page;
 };
 
 static volatile sig_atomic_t interrupted;
@@ -107,6 +128,16 @@ qml_signal(void *context, const char *name)
 		app->action = ACTION_USE;
 	else if (strcmp(name, "cameraCancelRequested") == 0)
 		app->action = ACTION_CANCEL;
+	else if (strcmp(name, "askPhotoRequested") == 0)
+		app->action = ACTION_ASK;
+	else if (strcmp(name, "answerBackRequested") == 0)
+		app->action = ACTION_ANSWER_BACK;
+	else if (strcmp(name, "answerPreviousRequested") == 0)
+		app->action = ACTION_ANSWER_PREVIOUS;
+	else if (strcmp(name, "answerNextRequested") == 0)
+		app->action = ACTION_ANSWER_NEXT;
+	else if (strcmp(name, "answerRetryRequested") == 0)
+		app->action = ACTION_ANSWER_RETRY;
 }
 
 static int
@@ -117,6 +148,65 @@ show_step(struct app *app)
 	return workshop_view_step(app->ui, &app->guide, app->step, bitmap);
 }
 
+static int
+show_answer(struct app *app)
+{
+	static const char waiting[WORKSHOP_ANSWER_LINES][WORKSHOP_ANSWER_LINE_BYTES] = {
+		"Asking Spark about this", "photo.", "", "", "", "", ""
+	};
+	static const char failed[WORKSHOP_ANSWER_LINES][WORKSHOP_ANSWER_LINE_BYTES] = {
+		"Spark could not answer.", "Check the connection and", "retry.", "", "", "", ""
+	};
+	const struct photo *photo;
+	const char (*lines)[WORKSHOP_ANSWER_LINE_BYTES];
+	const struct eqml_bitmap *bitmap;
+	enum workshop_answer_state state;
+	size_t page_count, page;
+
+	if (app->step >= app->guide.step_count ||
+	    app->photos[app->step].pixels == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+	photo = &app->photos[app->step];
+	bitmap = &photo->bitmap;
+	page = app->answer_page;
+	if (app->ask_state == ASK_RUNNING) {
+		state = WORKSHOP_ANSWER_WAITING;
+		lines = waiting;
+		page_count = 1;
+	} else if (app->ask_state == ASK_READY) {
+		state = WORKSHOP_ANSWER_READY;
+		lines = app->answer.pages[page];
+		page_count = app->answer.page_count;
+	} else {
+		state = WORKSHOP_ANSWER_ERROR;
+		lines = failed;
+		page_count = 1;
+		page = 0;
+	}
+	return workshop_view_answer(app->ui, bitmap, state, page, page_count, lines);
+}
+
+static void
+cancel_ask(struct app *app)
+{
+	if (++app->ask_generation == 0)
+		++app->ask_generation;
+	if (app->ask_child > 0) {
+		(void)kill(app->ask_child, SIGTERM);
+		while (waitpid(app->ask_child, NULL, 0) == -1 && errno == EINTR)
+			continue;
+		app->ask_child = -1;
+	}
+	if (app->ask_fd != -1) {
+		(void)close(app->ask_fd);
+		app->ask_fd = -1;
+	}
+	app->ask_size = 0;
+	app->ask_state = ASK_IDLE;
+}
+
 static void
 remove_pending(struct app *app)
 {
@@ -124,14 +214,19 @@ remove_pending(struct app *app)
 		(void)eqml_ui_set_bitmap(app->ui, eqml_sparkworkshop_node_cameraPreview, NULL);
 	}
 	free(app->pending.pixels);
+	if (app->pending.bmp_path != NULL) {
+		(void)unlink(app->pending.bmp_path);
+		free(app->pending.bmp_path);
+	}
 	memset(&app->pending, 0, sizeof(app->pending));
 	if (app->bmp_fd != -1) {
 		(void)close(app->bmp_fd);
 		app->bmp_fd = -1;
 	}
-	if (app->bmp_path[0] != '\0') {
+	if (app->bmp_path != NULL) {
 		(void)unlink(app->bmp_path);
-		app->bmp_path[0] = '\0';
+		free(app->bmp_path);
+		app->bmp_path = NULL;
 	}
 }
 
@@ -156,6 +251,7 @@ finish_child(struct app *app, int cancel)
 static int
 start_capture(struct app *app)
 {
+	char *template = NULL;
 	int pipefd[2], flags;
 	pid_t pid;
 
@@ -163,12 +259,17 @@ start_capture(struct app *app)
 		return workshop_view_camera(app->ui, app->step,
 		    "CAPTURE ALREADY RUNNING", NULL, 0);
 	}
-	strcpy(app->bmp_path, "/tmp/spark-workshop-photo.XXXXXX");
-	app->bmp_fd = mkstemp(app->bmp_path);
+	if (workshop_temp_template(app->temp_dir, "spark-workshop-photo",
+	    &template) == -1)
+		return -1;
+	app->bmp_fd = mkstemp(template);
 	if (app->bmp_fd == -1) {
-		app->bmp_path[0] = '\0';
+		int saved = errno;
+		free(template);
+		errno = saved;
 		return -1;
 	}
+	app->bmp_path = template;
 	if (pipe(pipefd) == -1)
 		goto fail_file;
 	pid = fork();
@@ -250,9 +351,218 @@ accept_capture(struct app *app)
 	fresh.bitmap.pixel_count = WORKSHOP_THUMB_WIDTH * WORKSHOP_THUMB_HEIGHT;
 	fresh.bitmap.alpha = NULL;
 	fresh.bitmap.alpha_count = 0;
-	memcpy(fresh.bmp_path, app->bmp_path, sizeof(fresh.bmp_path));
+	fresh.bmp_path = app->bmp_path;
+	app->bmp_path = NULL;
 	app->pending = fresh;
 	return 0;
+}
+
+static int
+start_ask(struct app *app)
+{
+	char *png_name = NULL;
+	char step_number[16];
+	int png_fd = -1, pipefd[2] = { -1, -1 }, flags;
+	pid_t pid;
+	const struct workshop_step *step;
+	const struct photo *photo;
+
+	if (app->ask_child > 0)
+		return show_answer(app);
+	if (app->step >= app->guide.step_count ||
+	    (photo = &app->photos[app->step])->pixels == NULL) {
+		errno = ENOENT;
+		return -1;
+	}
+	app->ask_state = ASK_FAILED;
+	app->answer_page = 0;
+	if (app->agent_lua == NULL || app->ask_script == NULL || app->ask_config == NULL) {
+		errno = ENOENT;
+		return show_answer(app);
+	}
+	step = &app->guide.steps[app->step];
+	if (++app->ask_generation == 0)
+		++app->ask_generation;
+	app->ask_current_generation = app->ask_generation;
+	app->ask_step = app->step;
+	app->ask_photo_generation = photo->generation;
+	app->ask_size = 0;
+	memset(app->ask_output, 0, sizeof(app->ask_output));
+	app->answer_page = 0;
+
+	if (workshop_temp_template(app->temp_dir, "spark-workshop-ask",
+	    &png_name) == -1)
+		goto error;
+	png_fd = mkstemp(png_name);
+	if (png_fd == -1)
+		goto error;
+	if (unlink(png_name) == -1 || ftruncate(png_fd, 0) == -1)
+		goto error;
+	free(png_name);
+	png_name = NULL;
+	if (pipe(pipefd) == -1)
+		goto error;
+	pid = fork();
+	if (pid == -1)
+		goto error;
+	if (pid == 0) {
+		struct sigaction sa = { .sa_handler = SIG_DFL };
+		int nullfd;
+		char *worker_argv[9];
+		(void)sigemptyset(&sa.sa_mask);
+		(void)sigaction(SIGINT, &sa, NULL);
+		(void)sigaction(SIGTERM, &sa, NULL);
+		(void)sigaction(SIGHUP, &sa, NULL);
+		(void)close(pipefd[0]);
+		(void)close(app->display.fd);
+		(void)close(app->mouse.fd);
+		if (app->reply_fd != -1)
+			(void)close(app->reply_fd);
+		if (app->bmp_fd != -1)
+			(void)close(app->bmp_fd);
+		if (workshop_photo_png(photo->bmp_path, png_fd) == -1 ||
+		    lseek(png_fd, 0, SEEK_SET) == -1 ||
+		    dup2(png_fd, STDIN_FILENO) == -1 ||
+		    dup2(pipefd[1], STDOUT_FILENO) == -1)
+			_exit(126);
+		nullfd = open("/dev/null", O_WRONLY);
+		if (nullfd != -1) {
+			(void)dup2(nullfd, STDERR_FILENO);
+			if (nullfd > STDERR_FILENO)
+				(void)close(nullfd);
+		} else
+			(void)close(STDERR_FILENO);
+		if (png_fd > STDERR_FILENO)
+			(void)close(png_fd);
+		if (pipefd[1] > STDERR_FILENO)
+			(void)close(pipefd[1]);
+		snprintf(step_number, sizeof(step_number), "%u", app->step + 1);
+		worker_argv[0] = (char *)app->agent_lua;
+		worker_argv[1] = (char *)app->ask_script;
+		worker_argv[2] = (char *)app->ask_config;
+		worker_argv[3] = "-";
+		worker_argv[4] = app->guide.title;
+		worker_argv[5] = step_number;
+		worker_argv[6] = (char *)step->title;
+		worker_argv[7] = (char *)step->paragraph;
+		worker_argv[8] = NULL;
+		execv(app->agent_lua, worker_argv);
+		_exit(127);
+	}
+	(void)close(pipefd[1]);
+	pipefd[1] = -1;
+	(void)close(png_fd);
+	png_fd = -1;
+	flags = fcntl(pipefd[0], F_GETFL);
+	if (flags == -1 || fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK) == -1) {
+		int saved = errno;
+		(void)kill(pid, SIGTERM);
+		while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
+			continue;
+		(void)close(pipefd[0]);
+		pipefd[0] = -1;
+		errno = saved;
+		goto error;
+	}
+	app->ask_child = pid;
+	app->ask_fd = pipefd[0];
+	app->ask_state = ASK_RUNNING;
+	if (show_answer(app) == -1) {
+		cancel_ask(app);
+		return -1;
+	}
+	return 0;
+error:
+	{
+		int saved = errno;
+		if (pipefd[0] != -1)
+			(void)close(pipefd[0]);
+		if (pipefd[1] != -1)
+			(void)close(pipefd[1]);
+		if (png_fd != -1)
+			(void)close(png_fd);
+		if (png_name != NULL) {
+			(void)unlink(png_name);
+			free(png_name);
+		}
+		app->ask_state = ASK_FAILED;
+		if (show_answer(app) == -1)
+			return -1;
+		errno = saved;
+		return 0;
+	}
+}
+
+static int
+complete_ask(struct app *app)
+{
+	int status;
+	ssize_t count;
+
+	for (;;) {
+		size_t capacity = sizeof(app->ask_output) - app->ask_size;
+		if (capacity == 0) {
+			cancel_ask(app);
+			app->ask_state = ASK_FAILED;
+			return show_answer(app);
+		}
+		count = read(app->ask_fd, app->ask_output + app->ask_size, capacity);
+		if (count > 0) {
+			app->ask_size += (size_t)count;
+			if (app->ask_size > WORKSHOP_ANSWER_MAX_BYTES + 2) {
+				cancel_ask(app);
+				app->ask_state = ASK_FAILED;
+				return show_answer(app);
+			}
+			continue;
+		}
+		if (count == -1 && errno == EINTR)
+			continue;
+		if (count == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+			return 0;
+		if (count == -1) {
+			cancel_ask(app);
+			app->ask_state = ASK_FAILED;
+			return show_answer(app);
+		}
+		break;
+	}
+	pid_t waited;
+	do {
+		waited = waitpid(app->ask_child, &status, 0);
+	} while (waited == -1 && errno == EINTR);
+	if (waited == -1) {
+		int saved = errno;
+		if (saved != ECHILD) {
+			(void)kill(app->ask_child, SIGTERM);
+			while (waitpid(app->ask_child, NULL, 0) == -1 && errno == EINTR)
+				continue;
+		}
+		app->ask_child = -1;
+		(void)close(app->ask_fd);
+		app->ask_fd = -1;
+		app->ask_state = ASK_FAILED;
+		errno = saved;
+		return show_answer(app);
+	}
+	app->ask_child = -1;
+	(void)close(app->ask_fd);
+	app->ask_fd = -1;
+	if (app->ask_current_generation != app->ask_generation ||
+	    app->ask_step != app->step ||
+	    app->ask_photo_generation != app->photos[app->step].generation) {
+		app->ask_state = ASK_IDLE;
+		return 0;
+	}
+	if (WIFEXITED(status) && WEXITSTATUS(status) == 0 &&
+	    workshop_answer_parse_response(app->ask_output, app->ask_size,
+	    &app->answer) == 0) {
+		app->ask_state = ASK_READY;
+		app->answer_page = 0;
+		return show_answer(app);
+	}
+	app->ask_state = ASK_FAILED;
+	return show_answer(app);
 }
 
 static int
@@ -299,20 +609,25 @@ apply_action(struct app *app, enum action action)
 	case ACTION_NONE:
 		return 0;
 	case ACTION_OPEN:
+		cancel_ask(app);
 		app->step = 0;
 		return show_step(app);
 	case ACTION_BACK:
+		cancel_ask(app);
 		if (app->step == 0)
 			return workshop_view_home(app->ui, &app->guide);
 		app->step--;
 		return show_step(app);
 	case ACTION_NEXT:
+		cancel_ask(app);
 		if (app->step + 1 < app->guide.step_count)
 			app->step++;
 		return show_step(app);
 	case ACTION_DONE:
+		cancel_ask(app);
 		return workshop_view_home(app->ui, &app->guide);
 	case ACTION_CAMERA:
+		cancel_ask(app);
 		remove_pending(app);
 		return workshop_view_camera(app->ui, app->step, "READY / TAKE A PHOTO", NULL, 0);
 	case ACTION_CAPTURE:
@@ -325,27 +640,49 @@ apply_action(struct app *app, enum action action)
 			errno = EINVAL;
 			return -1;
 		}
+		cancel_ask(app);
 		if (eqml_ui_set_bitmap(app->ui,
 		    eqml_sparkworkshop_node_cameraPreview, NULL) == -1 ||
 		    eqml_ui_set_bitmap(app->ui,
-		    eqml_sparkworkshop_node_photoThumbnail, NULL) == -1)
+		    eqml_sparkworkshop_node_photoThumbnail, NULL) == -1 ||
+		    eqml_ui_set_bitmap(app->ui,
+		    eqml_sparkworkshop_node_answerPhoto, NULL) == -1)
 			return -1;
 		free(app->photos[app->step].pixels);
-		if (app->photos[app->step].bmp_path[0] != '\0')
+		if (app->photos[app->step].bmp_path != NULL) {
 			(void)unlink(app->photos[app->step].bmp_path);
+			free(app->photos[app->step].bmp_path);
+		}
 		app->photos[app->step] = app->pending;
+		if (++app->photo_generation == 0)
+			++app->photo_generation;
+		app->photos[app->step].generation = app->photo_generation;
 		memset(&app->pending, 0, sizeof(app->pending));
-		app->pending.bmp_path[0] = '\0';
 		if (app->bmp_fd != -1) {
 			(void)close(app->bmp_fd);
 			app->bmp_fd = -1;
 		}
-		app->bmp_path[0] = '\0';
 		return show_step(app);
 	case ACTION_CANCEL:
 		finish_child(app, 1);
 		remove_pending(app);
 		return show_step(app);
+	case ACTION_ASK:
+		return start_ask(app);
+	case ACTION_ANSWER_BACK:
+		cancel_ask(app);
+		return show_step(app);
+	case ACTION_ANSWER_PREVIOUS:
+		if (app->ask_state == ASK_READY && app->answer_page != 0)
+			app->answer_page--;
+		return show_answer(app);
+	case ACTION_ANSWER_NEXT:
+		if (app->ask_state == ASK_READY &&
+		    app->answer_page + 1 < app->answer.page_count)
+			app->answer_page++;
+		return show_answer(app);
+	case ACTION_ANSWER_RETRY:
+		return start_ask(app);
 	}
 	errno = EINVAL;
 	return -1;
@@ -355,13 +692,19 @@ static int
 run(struct app *app)
 {
 	struct eqml_wsmouse_event events[16];
-	struct pollfd fds[2];
+	struct pollfd fds[3];
 	while (!interrupted) {
 		uint64_t now = monotonic_ms();
-		int count = 1, ready, timeout = eqml_ui_timeout(app->ui, now);
+		int count = 1, capture_index = -1, ask_index = -1;
+		int ready, timeout = eqml_ui_timeout(app->ui, now);
 		fds[0] = (struct pollfd){ .fd = app->mouse.fd, .events = POLLIN };
 		if (app->reply_fd != -1) {
+			capture_index = count;
 			fds[count++] = (struct pollfd){ .fd = app->reply_fd, .events = POLLIN };
+		}
+		if (app->ask_fd != -1) {
+			ask_index = count;
+			fds[count++] = (struct pollfd){ .fd = app->ask_fd, .events = POLLIN };
 		}
 		if (timeout < 0)
 			timeout = -1;
@@ -392,9 +735,14 @@ run(struct app *app)
 				}
 			}
 		}
-		if (app->reply_fd != -1 && count == 2 &&
-		    (fds[1].revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
+		if (capture_index != -1 && app->reply_fd == fds[capture_index].fd &&
+		    (fds[capture_index].revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
 			if (complete_capture(app) == -1)
+				return -1;
+		}
+		if (ask_index != -1 && app->ask_fd == fds[ask_index].fd &&
+		    (fds[ask_index].revents & (POLLIN | POLLHUP | POLLERR)) != 0) {
+			if (complete_ask(app) == -1)
 				return -1;
 		}
 		if (eqml_ui_tick(app->ui, monotonic_ms()) == -1 ||
@@ -407,7 +755,8 @@ run(struct app *app)
 static void
 usage(const char *program)
 {
-	fprintf(stderr, "usage: %s ABSOLUTE_GUIDE.md [-d DISPLAY] [-m MOUSE] [-c CAMERA]\n",
+	fprintf(stderr, "usage: %s ABSOLUTE_GUIDE.md [-d DISPLAY] [-m MOUSE] "
+	    "[-c CAMERA] [-a AGENT_LUA -s ASK_SCRIPT -f CONFIG]\n",
 	    program);
 }
 
@@ -415,10 +764,20 @@ int
 main(int argc, char **argv)
 {
 	struct app app = { .display.fd = -1, .mouse.fd = -1, .bmp_fd = -1,
-	    .reply_fd = -1, .child = -1, .camera_device = "/dev/video0" };
+	    .reply_fd = -1, .child = -1, .ask_fd = -1, .ask_child = -1,
+	    .camera_device = "/dev/video0" };
 	const char *display = "/dev/ttyE0", *mouse = "/dev/wsmouse0";
+	const char *tmp_dir = getenv("TMPDIR");
+	char *tmp_probe;
 	struct sigaction sa = { .sa_handler = on_signal };
 	int option, result = 1;
+	app.temp_dir = tmp_dir == NULL || tmp_dir[0] == '\0' ? "/tmp" : tmp_dir;
+	if (workshop_temp_template(app.temp_dir, "spark-workshop-probe",
+	    &tmp_probe) == -1) {
+		perror("TMPDIR");
+		return 2;
+	}
+	free(tmp_probe);
 
 	if (argc < 2 || argv[1][0] != '/') {
 		usage(argv[0]);
@@ -429,15 +788,21 @@ main(int argc, char **argv)
 		return 2;
 	}
 	optind = 2;
-	while ((option = getopt(argc, argv, "d:m:c:")) != -1) {
+	while ((option = getopt(argc, argv, "d:m:c:a:s:f:")) != -1) {
 		switch (option) {
 		case 'd': display = optarg; break;
 		case 'm': mouse = optarg; break;
 		case 'c': app.camera_device = optarg; break;
+		case 'a': app.agent_lua = optarg; break;
+		case 's': app.ask_script = optarg; break;
+		case 'f': app.ask_config = optarg; break;
 		default: usage(argv[0]); return 2;
 		}
 	}
-	if (optind != argc) {
+	if (optind != argc ||
+	    (app.agent_lua != NULL && app.agent_lua[0] != '/') ||
+	    (app.ask_script != NULL && app.ask_script[0] != '/') ||
+	    (app.ask_config != NULL && app.ask_config[0] != '/')) {
 		usage(argv[0]);
 		return 2;
 	}
@@ -462,6 +827,7 @@ main(int argc, char **argv)
 		else
 			perror("spark-workshop");
 	}
+	cancel_ask(&app);
 	finish_child(&app, 1);
 	remove_pending(&app);
 	if (eqml_wsmouse_close(&app.mouse) == -1)
@@ -469,11 +835,16 @@ main(int argc, char **argv)
 	if (app.ui != NULL) {
 		(void)eqml_ui_set_bitmap(app.ui,
 		    eqml_sparkworkshop_node_photoThumbnail, NULL);
+		(void)eqml_ui_set_bitmap(app.ui,
+		    eqml_sparkworkshop_node_answerPhoto, NULL);
 		eqml_ui_destroy(app.ui);
 	}
-	for (unsigned int i = 0; i < WORKSHOP_MAX_STEPS; i++)
-		if (app.photos[i].bmp_path[0] != '\0')
+	for (unsigned int i = 0; i < WORKSHOP_MAX_STEPS; i++) {
+		if (app.photos[i].bmp_path != NULL) {
 			(void)unlink(app.photos[i].bmp_path);
+			free(app.photos[i].bmp_path);
+		}
+	}
 	for (unsigned int i = 0; i < WORKSHOP_MAX_STEPS; i++)
 		free(app.photos[i].pixels);
 	if (eqml_wsdisplay_close(&app.display) == -1)

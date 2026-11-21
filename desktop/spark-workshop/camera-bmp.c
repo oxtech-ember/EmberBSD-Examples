@@ -129,15 +129,11 @@ workshop_camera_write_bmp(int fd, const uint8_t *uyvy, size_t size)
 }
 
 int
-workshop_camera_thumbnail(int fd, uint16_t *pixels, size_t count)
+workshop_bmp_validate(int fd)
 {
 	struct stat st;
-	uint8_t header[HEADER], expected[HEADER], row[ROW];
+	uint8_t header[HEADER], expected[HEADER];
 
-	if (pixels == NULL || count != WORKSHOP_THUMB_WIDTH * WORKSHOP_THUMB_HEIGHT) {
-		errno = EINVAL;
-		return -1;
-	}
 	if (fstat(fd, &st) == -1)
 		return -1;
 	if (!S_ISREG(st.st_mode) || st.st_size != FILE_BYTES) {
@@ -151,8 +147,32 @@ workshop_camera_thumbnail(int fd, uint16_t *pixels, size_t count)
 		errno = EINVAL;
 		return -1;
 	}
+	return 0;
+}
+
+int
+workshop_bmp_read_row(int fd, unsigned y, uint8_t bgr[WORKSHOP_CAMERA_WIDTH * 3])
+{
+	if (y >= WORKSHOP_CAMERA_HEIGHT) {
+		errno = EINVAL;
+		return -1;
+	}
+	return read_at(fd, bgr, ROW, HEADER + (off_t)y * ROW);
+}
+
+int
+workshop_camera_thumbnail(int fd, uint16_t *pixels, size_t count)
+{
+	uint8_t row[ROW];
+
+	if (pixels == NULL || count != WORKSHOP_THUMB_WIDTH * WORKSHOP_THUMB_HEIGHT) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (workshop_bmp_validate(fd) == -1)
+		return -1;
 	for (int y = 0; y < WORKSHOP_THUMB_HEIGHT; y++) {
-		if (read_at(fd, row, sizeof(row), HEADER + (off_t)y * 4 * ROW) == -1)
+		if (workshop_bmp_read_row(fd, (unsigned)y * 4, row) == -1)
 			return -1;
 		for (unsigned x = 0; x < WORKSHOP_THUMB_WIDTH; x++) {
 			const uint8_t *bgr = row + x * 4 * 3;

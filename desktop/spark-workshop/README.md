@@ -71,7 +71,39 @@ running so each step retains its photo for a later revisit. The app removes
 those files when a photo is replaced or the app exits; photos are not durable
 worktree attachments and are never written into the public example. The
 thumbnail is held in memory. This example does not implement a video stream,
-image upload, guide editing, or the full Spark client.
+guide editing, or the full Spark client.
+
+Temporary photo and Ask-conversion files use the absolute `TMPDIR` environment
+variable when set, or `/tmp` otherwise. The application rejects a relative or
+overlong directory path before opening the display. Both files are created
+with `mkstemp` permissions and removed when replaced, cancelled or closed.
+
+## Optional Spark answer
+
+The local camera and guide workflow works without network access or an Ask
+configuration. To enable the `Спросить` (Ask) action, provide absolute paths to the native
+Spark Lua executable, its `examples/ask-photo.lua` worker, and a separate
+configuration file. Build the [Spark runtime](https://github.com/oxtech-ember/EmberBSD-Spark/blob/main/docs/cross-build.md)
+for the target and use the [photo worker packaging command](https://github.com/oxtech-ember/EmberBSD-Spark/blob/main/docs/runtime.md#ask-about-an-accepted-photo)
+to install a standalone worker on the board. The example below uses an unpacked Spark source tree.
+
+```sh
+/path/to/spark-workshop /tmp/connector.md \
+	-a /path/to/agent-lua \
+	-s /path/to/EmberBSD-Spark/examples/ask-photo.lua \
+	-f /path/to/private-spark-config
+```
+
+The `Спросить` action starts one worker for the current step and accepted photo. It
+converts the saved BMP to PNG on a private temporary file descriptor and gives
+the PNG on worker standard input; the worker receives the guide title, step
+number, title, and paragraph as separate arguments. It returns one bounded
+response line. The configuration and credentials remain outside the UI and
+application binary. A request can be cancelled, retried after an error, and
+read page by page. The worker's HTTP timeout is selected in its configuration;
+the UI does not impose a shorter deadline. The current QML bitmap font accepts
+printable ASCII, so the worker requests a short English response; unsupported
+output is reported as an error rather than displayed as corrupted text.
 
 ## Checks and limits
 
@@ -81,13 +113,16 @@ build and set `EMBER_RUNTIME_SOURCE` and `CC` to the selected SDK inputs:
 
 ```sh
 desktop/spark-workshop/tests/run.sh
-CC="$HOST_PREFIX/bin/clang" EMBER_RUNTIME_SOURCE="$EMBER_RUNTIME_SOURCE" \
+CC="$HOST_PREFIX/bin/clang" HOST_SPNG_PREFIX="$HOST_PREFIX" \
+	EMBER_RUNTIME_SOURCE="$EMBER_RUNTIME_SOURCE" \
 	desktop/spark-workshop/tests/run.sh "$OUT/generated"
 ```
 
 The tests cover guide validation, BMP-to-RGB565 conversion and, when requested,
-the generated screen's navigation/camera hit targets. The guide reader accepts only the
-document subset above, and the camera path requires the stated V4L2 format.
+the generated screen's navigation/camera hit targets. Set `HOST_SPNG_PREFIX`
+to the native Ports prefix to explicitly include the BMP-to-PNG encoder test.
+The guide reader accepts only the document subset above, and the camera path
+requires the stated V4L2 format.
 On Mosaico R5, the demo fixture was seeded and projected offline through Spark;
 the 335-byte projected guide compared byte-for-byte with the expected content.
 The target app started and presented its Home screen without wsdisplay errors.
@@ -95,3 +130,5 @@ The operator then confirmed the second step, `Inspect the latch` (`2 / 3`),
 with a thumbnail of the captured workshop detail. This is a single-device
 interaction check; it does not establish camera behavior on other boards or
 durable photo storage.
+
+The [Mosaico transport check](https://github.com/oxtech-ember/EmberBSD-DevBoards/blob/main/boards/esp-mosaico/evidence/spark-workshop-ask-transport.json) records the board's HTTP and HTTPS results and a full-size synthetic photo request.

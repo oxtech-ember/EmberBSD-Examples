@@ -10,6 +10,8 @@
 #define WORKSHOP_CAMERA_STRIDE (WORKSHOP_CAMERA_WIDTH * 2U)
 #define WORKSHOP_CAMERA_BYTES (WORKSHOP_CAMERA_STRIDE * WORKSHOP_CAMERA_HEIGHT)
 
+int workshop_bmp_validate(int);
+int workshop_bmp_read_row(int, unsigned, uint8_t [WORKSHOP_CAMERA_WIDTH * 3]);
 int workshop_camera_write_bmp(int, const uint8_t *, size_t);
 
 #endif

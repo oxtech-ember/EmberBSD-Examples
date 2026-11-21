@@ -41,6 +41,9 @@ main(void)
 		}
 	};
 	static uint16_t pixels[160 * 120];
+	static const char lines[WORKSHOP_ANSWER_LINES][WORKSHOP_ANSWER_LINE_BYTES] = {
+		"Inspect the latch.", "Check both ends.", "", "", "", "", ""
+	};
 	const struct eqml_bitmap bitmap = { 160, 120, pixels, 160 * 120, NULL, 0 };
 	struct eqml_ui *ui = eqml_ui_create(&eqml_sparkworkshop, NULL, NULL);
 	assert(ui != NULL);
@@ -70,6 +73,29 @@ main(void)
 	assert(strcmp(last_signal, "cameraRetakeRequested") == 0);
 	click(ui, 300, 394);
 	assert(strcmp(last_signal, "cameraUseRequested") == 0);
+	assert(workshop_view_step(ui, &guide, 1, &bitmap) == 0);
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_photoThumbnail));
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_askAction));
+	assert(workshop_view_answer(ui, &bitmap, WORKSHOP_ANSWER_READY, 0, 2, lines) == 0);
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_answerPhoto));
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_answerNextAction));
+	assert(!eqml_ui_visible(ui, eqml_sparkworkshop_node_answerPreviousAction));
+	click(ui, 320, 430);
+	assert(strcmp(last_signal, "answerNextRequested") == 0);
+	assert(workshop_view_answer(ui, &bitmap, WORKSHOP_ANSWER_READY, 1, 2, lines) == 0);
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_answerPreviousAction));
+	assert(!eqml_ui_visible(ui, eqml_sparkworkshop_node_answerNextAction));
+	click(ui, 90, 430);
+	assert(strcmp(last_signal, "answerBackRequested") == 0);
+	assert(workshop_view_answer(ui, &bitmap, WORKSHOP_ANSWER_WAITING, 0, 1, lines) == 0);
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_answerCancelAction));
+	assert(!eqml_ui_visible(ui, eqml_sparkworkshop_node_answerBackAction));
+	click(ui, 90, 430);
+	assert(strcmp(last_signal, "answerBackRequested") == 0);
+	assert(workshop_view_answer(ui, &bitmap, WORKSHOP_ANSWER_ERROR, 0, 1, lines) == 0);
+	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_answerRetryAction));
+	click(ui, 320, 430);
+	assert(strcmp(last_signal, "answerRetryRequested") == 0);
 	assert(workshop_view_step(ui, &guide, 1, &bitmap) == 0);
 	assert(eqml_ui_visible(ui, eqml_sparkworkshop_node_photoThumbnail));
 	assert(strcmp(eqml_ui_string(ui, eqml_sparkworkshop_text_photoHint),
