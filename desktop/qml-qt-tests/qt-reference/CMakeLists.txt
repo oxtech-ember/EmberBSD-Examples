@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: BSD-2-Clause
+cmake_minimum_required(VERSION 3.23)
+project(qml_qt_reference LANGUAGES CXX)
+find_package(Qt6 6.12.0 EXACT REQUIRED COMPONENTS Quick)
+add_executable(qt_reference reference.cpp)
+target_link_libraries(qt_reference PRIVATE Qt6::Quick)
+target_compile_features(qt_reference PRIVATE cxx_std_17)
+if(APPLE)
+    target_compile_options(qt_reference PRIVATE -stdlib=libc++)
+    target_link_options(qt_reference PRIVATE -stdlib=libc++)
+endif()

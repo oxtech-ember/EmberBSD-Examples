@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/qt/qtdeclarative",
+  "tag": "v6.12.0",
+  "tag_object": "c3ab6d3094e8b843c6fc3e04ed3e0f40d4092447",
+  "commit": "4332fbbb4c340463dc8cee36dda0c85d932122d8",
+  "files": {
+    "visualparent.qml": {
+      "path": "src/quick/doc/snippets/qml/visualparent.qml",
+      "sha256": "f86bd4d986bb9b9b1865238ae5c7cf88fdf373882344778970e0e302e9d1efaf",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "visualparent2.qml": {
+      "path": "src/quick/doc/snippets/qml/visualparent2.qml",
+      "sha256": "1e5f85efb04b723728f443db56bff0885b567bf7df1047df19115f03dc598cd3",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "grid-spacing.qml": {
+      "path": "src/quick/doc/snippets/qml/grid-spacing.qml",
+      "sha256": "a938890b3190672ae09e42577a84934b402c0de61b89a53598426f835b80520e",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "mousearea.qml": {
+      "path": "examples/quick/mousearea/mousearea.qml",
+      "sha256": "998fb4bcde59c931149a99253d5a3d5b8eea4f71d2e99e0f28fb54dfad37354c",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "BSD-3-Clause.txt": {
+      "path": "LICENSES/BSD-3-Clause.txt",
+      "sha256": "9f0490f18656c6f2435bd14f603ef0c96434d1825615363dce43abb42ed1dcce",
+      "spdx": "BSD-3-Clause"
+    }
+  }
+}

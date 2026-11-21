@@ -167,6 +167,15 @@ partition used on the test board. Qt Quick target rendering and peak RAM use
 have yet to be measured. The LVGL and captured-frame executables include
 their text rendering data.
 
+### QML compiler and renderer integration tests
+
+The [`qml-qt-tests`](../qml-qt-tests/README.md) suite runs three unchanged Qt
+Declarative 6.12 scenes through the real SDK compiler and EmberBSD Runtime,
+then compares every RGB565 pixel with an independent Qt Quick offscreen frame.
+It also verifies that the unsupported interactive `MouseArea` sample fails
+with a source-local diagnostic before C generation. The target framebuffer and
+touch path remain outside this host test.
+
 ### Embedded QML acceptance
 
 The RV32 binary compiled from the unchanged `Weather.qml` was run on a
