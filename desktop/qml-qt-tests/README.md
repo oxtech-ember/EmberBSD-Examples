@@ -1,8 +1,7 @@
 # QML-to-Qt Quick pixel integration tests
 
 This test ties together the implemented SDK QML compiler, the experimental
-EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. It uses
-only the `QtQuick` types already in the small runtime profile.
+EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Three fixtures exercise the supported profile. A fourth exercises a compiler diagnostic.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -48,5 +47,7 @@ scenes are 320 × 480; Grid is 112 × 112. Frames are raw little-endian RGB565
 without row padding.
 
 The offscreen comparison checks QML layout and the Runtime painter against Qt
-Quick's output. It does not exercise the target `bsdfb` QPA, wsdisplay
-framebuffer, target display color path, touch input or physical hardware.
+Quick's output. A separate RV32 test on one ESP-Mosaico V1.2 produced the Qt
+reference CRC32 for each of the three frames. The board also presented
+`visualparent2.qml` through wsdisplay.
+[Device measurements](https://github.com/oxtech-ember/EmberBSD-DevBoards/blob/1c7cef575ecc10e67a84598642da0693a24a556e/boards/esp-mosaico/evidence/qml-qt-reference-scenes.json).

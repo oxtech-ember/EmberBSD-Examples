@@ -145,12 +145,12 @@ in addition to the C foundation.
 | RV32 build | Stripped executable size |
 | --- | ---: |
 | Qt Quick 6.12.0 | 16,730,652 bytes |
-| EmberBSD QML, including renderer, display backend and static libc | 505,052 bytes |
+| EmberBSD QML, scene ABI 2, renderer, display backend and static libc | 505,284 bytes |
 | LVGL 9.6.0 | 992,984 bytes |
 | Captured QML frame | 506,872 bytes |
 | Empty C main with the same C startup and libc | 498,664 bytes |
 
-The EmberBSD QML executable is 6,388 bytes larger than the empty C
+The scene ABI 2 EmberBSD QML executable is 6,620 bytes larger than the empty C
 executable with the same startup and libc. Both the model and the text are
 evaluated on the target. In the full Qt Quick link the object for the QML
 scene itself accounts for about 20.5 kB. The large contributors are Qt Quick,
@@ -186,6 +186,13 @@ or the total RAM used by the OS and display. A host render of the same
 generated scene changed 12 rows within the central label; all other rows
 matched. The tested ELF SHA-256 was
 `82431333c028e8897f487b78fa24feb0cd161d5164edb58917abb517620f86ee`.
+On the R4 root, that same 505,052-byte executable displayed `-8 C` on the panel.
+Its process stayed alive after logout and had a separate RSS sample of 908 KiB.
+[Device measurements](https://github.com/oxtech-ember/EmberBSD-DevBoards/blob/d5c5634/boards/esp-mosaico/evidence/weather-qml-run.json).
+
+The 505,284-byte weather build in the table uses scene ABI 2 and the same
+`Weather.qml`. Its ELF SHA-256 is
+`e62269c5de69d8fe5c457a29a0dfa6faaa33eb6ff94d88783d6c1f9623745e4f`.
 
 ### Physical LVGL acceptance
 
