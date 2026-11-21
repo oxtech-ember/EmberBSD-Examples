@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WireGuard
+Name[ru]=WireGuard
+Comment=Connect WireGuard tunnels
+Comment[ru]=Подключение туннелей WireGuard
+Exec=ember-wireguard --show
+Icon=network-vpn
+Terminal=false
+Categories=Network;Settings;
+X-GNOME-Autostart-enabled=false

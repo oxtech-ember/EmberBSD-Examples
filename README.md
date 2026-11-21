@@ -25,6 +25,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [Addressed I²C register read](diagnostics/i2c-register-read/README.md)
 
 - [Desktop Wi-Fi manager using the supplicant control socket](desktop/ember-wifi/README.md)
+- [Desktop WireGuard tunnel manager](desktop/ember-wireguard/README.md)
 
 - [H.265 over RTP with FFmpeg and GStreamer, packet loss and receiver restart](media/h265-rtp/README.md)
 - [Four H.265 streams in a Qt Multimedia raster window, with pixel and CPU checks](media/qt-four-streams/README.md)
