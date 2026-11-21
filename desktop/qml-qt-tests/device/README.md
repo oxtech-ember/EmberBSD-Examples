@@ -35,8 +35,9 @@ Use the same build inputs and pass `behavior` to `device/build.sh`. This builds
 the display and pointer device paths as for `mousearea`. On the 480 × 480
 display, the 400 × 400 scene starts at (40, 40). Tap the red square near
 (100, 190), let it stop, then tap it near (175, 190). Each tap moves it 50 pixels
-to the right over one second. The runner reports physical input and the red
-square's x coordinate in presented frames. Coordinates in the log are relative
+to the right over one second. The runner reports physical input. Pass `--trace-frames` before the device
+paths to also log the red square's x coordinate after each frame. Leave the
+option off when measuring animation timing. Coordinates in the log are relative
 to the scene. The original test continues moving the square to the right on
 each click. Restart the application to restore its initial position.
 

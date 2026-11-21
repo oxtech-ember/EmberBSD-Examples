@@ -54,41 +54,9 @@ qml_log(void *cookie, const char *message)
 	(void)fflush(stdout);
 }
 
-static int
-present(struct eqml_ui *ui, struct eqml_wsdisplay *display,
-	uint16_t x, uint16_t y, uint16_t line[DISPLAY_WIDTH])
-{
-	const struct eqml_scene *frame = eqml_ui_frame(ui);
-
-	if (frame == NULL)
-		return -1;
-	if (x > display->width || frame->width > display->width - x ||
-	    y > display->height || frame->height > display->height - y) {
-		errno = ENOTSUP;
-		return -1;
-	}
-	return eqml_wsdisplay_present_at(display, frame, NULL, x, y, line,
-	    DISPLAY_WIDTH);
-}
-
-static int
-clear_display(struct eqml_wsdisplay *display, uint16_t color,
-	uint16_t line[DISPLAY_WIDTH])
-{
-	struct eqml_scene blank = {
-		.width = DISPLAY_WIDTH,
-		.height = DISPLAY_HEIGHT,
-		.background = color
-	};
-
-	return eqml_wsdisplay_present(display, &blank, NULL, line,
-	    DISPLAY_WIDTH);
-}
-
 static void
-log_position(struct eqml_ui *ui, uint16_t color, const char *label)
+log_position(const struct eqml_scene *frame, uint16_t color, const char *label)
 {
-	const struct eqml_scene *frame = eqml_ui_frame(ui);
 	size_t i;
 
 	if (frame == NULL)
@@ -103,6 +71,40 @@ log_position(struct eqml_ui *ui, uint16_t color, const char *label)
 			return;
 		}
 	}
+}
+
+struct viewport {
+	struct eqml_wsdisplay *display;
+	uint16_t x, y;
+	uint16_t *line;
+	int trace_frames;
+};
+
+static int
+present(void *cookie, const struct eqml_scene *frame, const struct eqml_region *region)
+{
+	struct viewport *v = cookie;
+
+	if (eqml_wsdisplay_present_region_at(v->display, frame, NULL, v->x,
+	    v->y, region, v->line, DISPLAY_WIDTH) == -1)
+		return -1;
+	if (v->trace_frames && strcmp(SCENE_NAME, "behavior") == 0)
+		log_position(frame, 0xf800, "red");
+	return 0;
+}
+
+static int
+clear_display(struct eqml_wsdisplay *display, uint16_t color,
+	uint16_t line[DISPLAY_WIDTH])
+{
+	struct eqml_scene blank = {
+		.width = DISPLAY_WIDTH,
+		.height = DISPLAY_HEIGHT,
+		.background = color
+	};
+
+	return eqml_wsdisplay_present(display, &blank, NULL, line,
+	    DISPLAY_WIDTH);
 }
 
 static const char *
@@ -129,12 +131,19 @@ main(int argc, char **argv)
 	struct pollfd pfd;
 	uint64_t now;
 	int timeout, status = 1, ready, count, changed, result;
-	uint16_t viewport_x, viewport_y;
-	const char *display_path = argc > 1 ? argv[1] : "/dev/ttyE0";
-	const char *mouse_path = argc > 2 ? argv[2] : "/dev/wsmouse0";
+	int trace_frames = argc > 1 && strcmp(argv[1], "--trace-frames") == 0;
+	struct viewport viewport = { .display = &display, .line = line,
+	    .trace_frames = trace_frames };
+	const char *display_path, *mouse_path;
 
+	if (trace_frames) {
+		argc--;
+		argv++;
+	}
+	display_path = argc > 1 ? argv[1] : "/dev/ttyE0";
+	mouse_path = argc > 2 ? argv[2] : "/dev/wsmouse0";
 	if (argc > 3) {
-		(void)fprintf(stderr, "usage: %s [display [mouse]]\n", argv[0]);
+		(void)fprintf(stderr, "usage: %s [--trace-frames] [display [mouse]]\n", SCENE_NAME);
 		return 2;
 	}
 	memset(&sa, 0, sizeof(sa));
@@ -165,15 +174,15 @@ main(int argc, char **argv)
 		(void)fprintf(stderr, "scene exceeds the display size\n");
 		goto out;
 	}
-	viewport_x = (uint16_t)((display.width - SCENE_SYMBOL.width) / 2);
-	viewport_y = (uint16_t)((display.height - SCENE_SYMBOL.height) / 2);
+	viewport.x = (uint16_t)((display.width - SCENE_SYMBOL.width) / 2);
+	viewport.y = (uint16_t)((display.height - SCENE_SYMBOL.height) / 2);
 	if (clear_display(&display, SCENE_SYMBOL.background, line) == -1 ||
-	    present(ui, &display, viewport_x, viewport_y, line) == -1) {
+	    eqml_ui_present(ui, present, &viewport) == -1) {
 		perror("initial render");
 		goto out;
 	}
 	(void)fprintf(stdout, "presented %s %ux%u at x=%u y=%u\n", SCENE_NAME,
-	    SCENE_SYMBOL.width, SCENE_SYMBOL.height, viewport_x, viewport_y);
+	    SCENE_SYMBOL.width, SCENE_SYMBOL.height, viewport.x, viewport.y);
 	(void)fflush(stdout);
 	pfd.fd = mouse.fd;
 	pfd.events = POLLIN;
@@ -210,8 +219,8 @@ main(int argc, char **argv)
 						(void)fflush(stdout);
 					}
 					{
-					int64_t local_x = (int64_t)events[i].x - viewport_x;
-					int64_t local_y = (int64_t)events[i].y - viewport_y;
+					int64_t local_x = (int64_t)events[i].x - viewport.x;
+					int64_t local_y = (int64_t)events[i].y - viewport.y;
 					int32_t x = local_x < INT32_MIN ? INT32_MIN :
 					    local_x > INT32_MAX ? INT32_MAX : (int32_t)local_x;
 					int32_t y = local_y < INT32_MIN ? INT32_MIN :
@@ -226,7 +235,7 @@ main(int argc, char **argv)
 					changed |= result > 0;
 					if (events[i].phase == EQML_UP &&
 					    strcmp(SCENE_NAME, "mousearea") == 0)
-						log_position(ui, 0x001f, "blue");
+						log_position(eqml_ui_frame(ui), 0x001f, "blue");
 					}
 				}
 			} while (count == (int)(sizeof(events) / sizeof(events[0])) &&
@@ -243,13 +252,10 @@ main(int argc, char **argv)
 			goto out;
 		}
 		changed |= result > 0;
-		if (changed && present(ui, &display, viewport_x, viewport_y,
-		    line) == -1) {
+		if (changed && eqml_ui_present(ui, present, &viewport) == -1) {
 			perror("render");
 			goto out;
 		}
-		if (changed && strcmp(SCENE_NAME, "behavior") == 0)
-			log_position(ui, 0xf800, "red");
 	}
 	status = 0;
 out:
