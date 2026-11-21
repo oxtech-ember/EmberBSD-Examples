@@ -18,6 +18,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [LVGL status and touch feedback with wsdisplay and wsmouse](desktop/lvgl-wscons/README.md)
 - [A small weather screen with EmberBSD QML, Qt Quick and LVGL on Mosaico](desktop/mosaico-weather/README.md)
 - [Network Lab — a touch-operated UTC clock and animated DNS lookup meter](desktop/qml-network-lab/README.md)
+- [Spark Workshop — local worktree guide steps with camera photos](desktop/spark-workshop/README.md)
 - [QML compiler and Runtime pixel parity against official Qt Quick scenes](desktop/qml-qt-tests/README.md)
 
 - [Bounded integer and floating-point CPU load](diagnostics/cpu-load/README.md)
