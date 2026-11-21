@@ -169,9 +169,10 @@ their text rendering data.
 
 ### QML compiler and renderer integration tests
 
-The [`qml-qt-tests`](../qml-qt-tests/README.md) suite runs three unchanged Qt
+The [`qml-qt-tests`](../qml-qt-tests/README.md) suite runs four unchanged Qt
 Declarative 6.12 scenes through the real SDK compiler and EmberBSD Runtime,
-then compares every RGB565 pixel with an independent Qt Quick offscreen frame.
+then compares every RGB565 pixel with an independent Qt Quick offscreen frame,
+including Grid and Row spacing with unequal child dimensions.
 The interactive `MouseArea` example compares press, coordinate mapping,
 click, hold and bounded drag with Qt Quick. The target framebuffer and
 touch path remain outside this host test.

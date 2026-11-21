@@ -28,6 +28,28 @@ The build runs the SDK's `qml-compile.py` for the original QML and links the
 generated `eqml_mousearea` scene, Runtime renderer/input/display/wscons adapter,
 and device runner as a static RV32 ILP32 soft-float executable.
 
+## Upstream Row spacing
+
+Build the two static target executables from the same unchanged Qt fixture:
+
+```sh
+HOST_PREFIX=/path/to/host-pkg-llvm \
+EMBER_SDK_SOURCE=/path/to/EmberBSD-SDK \
+EMBER_RUNTIME_SOURCE=/path/to/EmberBSD-Runtime \
+SYSROOT=/path/to/rv32/sysroot \
+BUILTINS=/path/to/libclang_rt.builtins-riscv32.a \
+UNWIND=/path/to/libunwind.a \
+OUT=/tmp/qml-row-rv32 \
+sh desktop/qml-qt-tests/device/build-row-spacing.sh
+```
+
+`row-spacing-smoke` renders the initial LTR `eqml_horizontalspacing` scene to
+RGB565 rows and prints their CRC32 without opening the display. `row-spacing-display`
+clears the 480 × 480 display to white, centers the 320 × 240 QML viewport, draws
+the original Row scene and waits for SIGINT, SIGTERM or SIGHUP before restoring
+the prior wsdisplay mode. It only opens the supplied wsdisplay path; it does not
+create device nodes or modify persistent configuration.
+
 ## Run on an image without a mouse node
 
 The EmberBSD OS tree assigns `wsmouse` character major 212 and `MAKEDEV`

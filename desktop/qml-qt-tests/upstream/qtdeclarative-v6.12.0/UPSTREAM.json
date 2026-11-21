@@ -28,6 +28,11 @@
       "path": "LICENSES/BSD-3-Clause.txt",
       "sha256": "9f0490f18656c6f2435bd14f603ef0c96434d1825615363dce43abb42ed1dcce",
       "spdx": "BSD-3-Clause"
+    },
+    "horizontal-spacing.qml": {
+      "path": "tests/auto/quick/qquickpositioners/data/horizontal-spacing.qml",
+      "sha256": "a2e2a548b8e5a45769ecc515984fcd66429128ea6e5be7b16f57b8886360f1da",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
     }
   }
 }

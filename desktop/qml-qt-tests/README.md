@@ -1,7 +1,9 @@
 # QML-to-Qt Quick pixel integration tests
 
 This test ties together the implemented SDK QML compiler, the experimental
-EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Three static fixtures compare RGB565 frames. A fourth compares pointer event handling.
+EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four
+static fixtures compare RGB565 frames, and a fifth compares pointer event
+handling.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -17,6 +19,14 @@ Grid spacing/centering:
   implicitly clipped by green and that blue covers red in their overlap.
 - `grid-spacing.qml` puts four fixed-size rectangles in a centered two-column
   Grid and checks each tile and the spacing gap.
+- `horizontal-spacing.qml` is the unchanged Qt 6.12 positioner test. Its
+  `Item` root is shown in a 320 × 240 viewport; the initial LTR `Row` has
+  spacing 10 and red rectangles sized 50 × 50, 20 × 10 and 40 × 20. The
+  renderer compares the whole image, including the two white spacing gaps and
+  the white window background. A temporary test input changes the root's
+  boolean initial value to true and compares the RTL branch separately. The
+  compiler evaluates this boolean at build time; the generated scene does not
+  expose a mutable property or live binding.
 
 The unchanged `mousearea.qml` exercises translated text, pointer coordinates,
 containsPress opacity, click, hold and bounded drag. A Qt Quick test driver

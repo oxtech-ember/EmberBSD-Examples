@@ -42,6 +42,20 @@ checks = {"visualparent": {
     "yellow tile": (84, 28, rgb565("#aaaa66")),
     "gray tile": (28, 84, rgb565("#9999aa")),
     "blue tile": (84, 84, rgb565("#6666aa")),
+}, "horizontal-spacing-ltr": {
+    "first rectangle": (25, 25, rgb565("#ff0000")),
+    "first spacing": (55, 5, rgb565("#ffffff")),
+    "second rectangle": (65, 5, rgb565("#ff0000")),
+    "second spacing": (85, 5, rgb565("#ffffff")),
+    "third rectangle": (100, 5, rgb565("#ff0000")),
+    "implicit root background": (200, 100, rgb565("#ffffff")),
+}, "horizontal-spacing-rtl": {
+    "first visual rectangle": (20, 5, rgb565("#ff0000")),
+    "first spacing": (45, 5, rgb565("#ffffff")),
+    "second visual rectangle": (55, 5, rgb565("#ff0000")),
+    "second spacing": (75, 5, rgb565("#ffffff")),
+    "third visual rectangle": (100, 5, rgb565("#ff0000")),
+    "implicit root background": (200, 100, rgb565("#ffffff")),
 }}
 for label, (x, y, value) in checks[scene].items():
     actual = pixel(runtime, x, y)
