@@ -22,7 +22,7 @@ fi
     -DCMAKE_PREFIX_PATH="$QT_HOST_PREFIX" \
     -DCMAKE_MAKE_PROGRAM="$NINJA" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=MinSizeRel "$@"
-"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference qt_mousearea
+"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference qt_mousearea qt_behavior
 for scene in visualparent visualparent2 grid-spacing; do
     case "$scene" in
     visualparent) width=320; height=480; symbol=visualparent ;;
@@ -82,17 +82,19 @@ PY
     "$PYTHON" "$src/compare_frames.py" "$scene" "$runtime_frame" "$qt_frame" 320 240
 done
 
-# Compare the actual property changes of the untouched interactive QML.
-mousearea_input="$src/upstream/qtdeclarative-v6.12.0/mousearea.qml"
-"$PYTHON" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" "$mousearea_input" \
-    --name mousearea --output "$OUT/generated/mousearea.c"
-"$CC" -std=c11 -Wall -Wextra -Werror -I"$EMBER_RUNTIME_SOURCE/qml" \
-    "$src/mousearea_trace.c" "$OUT/generated/mousearea.c" "$EMBER_RUNTIME_SOURCE/qml/eqml.c" \
-    "$EMBER_RUNTIME_SOURCE/qml/eqml_input.c" -o "$OUT/mousearea-trace"
-"$OUT/mousearea-trace" >"$OUT/mousearea-runtime.txt"
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_SCALE_FACTOR=1 \
-    QT_QPA_PLATFORM_PLUGIN_PATH="$QT_HOST_PREFIX/plugins/platforms" \
-    QT_PLUGIN_PATH="$QT_HOST_PREFIX/plugins" QML2_IMPORT_PATH="$QT_HOST_PREFIX/qml" \
-    "$OUT/qt-reference-build/qt_mousearea" "$mousearea_input" >"$OUT/mousearea-qt.txt"
-diff -u "$OUT/mousearea-qt.txt" "$OUT/mousearea-runtime.txt"
-cat "$OUT/mousearea-runtime.txt"
+# Compare changes in interactive QML properties with the Qt implementation.
+for scene in mousearea behavior; do
+    input="$src/upstream/qtdeclarative-v6.12.0/$scene.qml"
+    "$PYTHON" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" "$input" \
+        --name "$scene" --output "$OUT/generated/$scene.c"
+    "$CC" -std=c11 -Wall -Wextra -Werror -I"$EMBER_RUNTIME_SOURCE/qml" \
+        "$src/${scene}_trace.c" "$OUT/generated/$scene.c" "$EMBER_RUNTIME_SOURCE/qml/eqml.c" \
+        "$EMBER_RUNTIME_SOURCE/qml/eqml_input.c" -o "$OUT/$scene-trace"
+    "$OUT/$scene-trace" >"$OUT/$scene-runtime.txt"
+    QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_SCALE_FACTOR=1 \
+        QT_QPA_PLATFORM_PLUGIN_PATH="$QT_HOST_PREFIX/plugins/platforms" \
+        QT_PLUGIN_PATH="$QT_HOST_PREFIX/plugins" QML2_IMPORT_PATH="$QT_HOST_PREFIX/qml" \
+        "$OUT/qt-reference-build/qt_$scene" "$input" >"$OUT/$scene-qt.txt"
+    diff -u "$OUT/$scene-qt.txt" "$OUT/$scene-runtime.txt"
+    cat "$OUT/$scene-runtime.txt"
+done

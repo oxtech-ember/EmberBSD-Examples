@@ -1,9 +1,8 @@
 # QML-to-Qt Quick pixel integration tests
 
 This test ties together the implemented SDK QML compiler, the experimental
-EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four
-static fixtures compare RGB565 frames, and a fifth compares pointer event
-handling.
+EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four static fixtures compare RGB565 frames. Two interactive fixtures check
+pointer event handling and animated motion.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -35,6 +34,13 @@ reads the QML object properties. A separate C trace sends the corresponding
 input to the EmberBSD runtime and reads its scene. The host test compares the
 two results. The embedded bitmap font has its own metrics, so this fixture
 compares interaction and geometry rather than glyph pixels.
+
+The unchanged Qt manual accessibility test `behavior.qml` draws a red square and
+the label “Behavior animation”. Each click on the square sets a new x coordinate
+50 pixels to the right. Its linear `NumberAnimation` takes 1000 ms. The Qt and
+Runtime traces click twice, check that intermediate positions occur, and compare
+the two endpoints. The Runtime trace also checks the halfway position and that
+the timer sleeps after the animation completes.
 
 ## Run
 

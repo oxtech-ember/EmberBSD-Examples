@@ -17,7 +17,7 @@
 #include "eqml_wsdisplay.h"
 #include "eqml_wsmouse.h"
 
-extern const struct eqml_scene eqml_mousearea;
+extern const struct eqml_scene SCENE_SYMBOL;
 
 #define DISPLAY_WIDTH 480
 #define DISPLAY_HEIGHT 480
@@ -62,8 +62,7 @@ present(struct eqml_ui *ui, struct eqml_wsdisplay *display,
 
 	if (frame == NULL)
 		return -1;
-	if (frame->width != 320 || frame->height != DISPLAY_HEIGHT ||
-	    x > display->width || frame->width > display->width - x ||
+	if (x > display->width || frame->width > display->width - x ||
 	    y > display->height || frame->height > display->height - y) {
 		errno = ENOTSUP;
 		return -1;
@@ -87,7 +86,7 @@ clear_display(struct eqml_wsdisplay *display, uint16_t color,
 }
 
 static void
-log_blue_position(struct eqml_ui *ui)
+log_position(struct eqml_ui *ui, uint16_t color, const char *label)
 {
 	const struct eqml_scene *frame = eqml_ui_frame(ui);
 	size_t i;
@@ -96,8 +95,8 @@ log_blue_position(struct eqml_ui *ui)
 		return;
 	for (i = 0; i < frame->item_count; i++) {
 		if (frame->items[i].kind == EQML_RECT &&
-		    frame->items[i].data.rect.color == 0x001f) {
-			(void)fprintf(stdout, "blue position x=%ld y=%ld\n",
+		    frame->items[i].data.rect.color == color) {
+			(void)fprintf(stdout, "%s position x=%ld y=%ld\n", label,
 			    (long)frame->items[i].data.rect.x,
 			    (long)frame->items[i].data.rect.y);
 			(void)fflush(stdout);
@@ -157,20 +156,24 @@ main(int argc, char **argv)
 		perror("open wsmouse");
 		goto out;
 	}
-	ui = eqml_ui_create(&eqml_mousearea, qml_log, NULL);
+	ui = eqml_ui_create(&SCENE_SYMBOL, qml_log, NULL);
 	if (ui == NULL) {
 		perror("create UI");
 		goto out;
 	}
-	viewport_x = (uint16_t)((display.width - eqml_mousearea.width) / 2);
-	viewport_y = (uint16_t)((display.height - eqml_mousearea.height) / 2);
-	if (clear_display(&display, eqml_mousearea.background, line) == -1 ||
+	if (SCENE_SYMBOL.width > display.width || SCENE_SYMBOL.height > display.height) {
+		(void)fprintf(stderr, "scene exceeds the display size\n");
+		goto out;
+	}
+	viewport_x = (uint16_t)((display.width - SCENE_SYMBOL.width) / 2);
+	viewport_y = (uint16_t)((display.height - SCENE_SYMBOL.height) / 2);
+	if (clear_display(&display, SCENE_SYMBOL.background, line) == -1 ||
 	    present(ui, &display, viewport_x, viewport_y, line) == -1) {
 		perror("initial render");
 		goto out;
 	}
-	(void)fprintf(stdout, "presented mousearea 320x480 at x=%u y=%u\n",
-	    viewport_x, viewport_y);
+	(void)fprintf(stdout, "presented %s %ux%u at x=%u y=%u\n", SCENE_NAME,
+	    SCENE_SYMBOL.width, SCENE_SYMBOL.height, viewport_x, viewport_y);
 	(void)fflush(stdout);
 	pfd.fd = mouse.fd;
 	pfd.events = POLLIN;
@@ -221,8 +224,9 @@ main(int argc, char **argv)
 						goto out;
 					}
 					changed |= result > 0;
-					if (events[i].phase == EQML_UP)
-						log_blue_position(ui);
+					if (events[i].phase == EQML_UP &&
+					    strcmp(SCENE_NAME, "mousearea") == 0)
+						log_position(ui, 0x001f, "blue");
 					}
 				}
 			} while (count == (int)(sizeof(events) / sizeof(events[0])) &&
@@ -244,6 +248,8 @@ main(int argc, char **argv)
 			perror("render");
 			goto out;
 		}
+		if (changed && strcmp(SCENE_NAME, "behavior") == 0)
+			log_position(ui, 0xf800, "red");
 	}
 	status = 0;
 out:

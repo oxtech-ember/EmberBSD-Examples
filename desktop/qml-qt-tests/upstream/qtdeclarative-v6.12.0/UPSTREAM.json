@@ -33,6 +33,16 @@
       "path": "tests/auto/quick/qquickpositioners/data/horizontal-spacing.qml",
       "sha256": "a2e2a548b8e5a45769ecc515984fcd66429128ea6e5be7b16f57b8886360f1da",
       "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "GPL-3.0-only.txt": {
+      "path": "LICENSES/GPL-3.0-only.txt",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+      "spdx": "GPL-3.0-only"
+    },
+    "behavior.qml": {
+      "path": "tests/manual/accessibility/behavior.qml",
+      "sha256": "37fa1bdaa61d10e2e43142808046fd207f4e4ac390db9fa4a5315abc1c5093b4",
+      "spdx": "LicenseRef-Qt-Commercial OR GPL-3.0-only"
     }
   }
 }
