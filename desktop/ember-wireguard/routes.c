@@ -154,15 +154,20 @@ current(const char *tool, const char *address, int exact_prefix,
 		if (v != 0)
 			return -1;
 	}
-	if (!ipv4(dest) || !out->iface[0] ||
-	    (exact_prefix >= 0 && bits != (unsigned)exact_prefix))
+	if (!ipv4(dest) || !out->iface[0])
 		return -1;
 	strcpy(out->route.dest, dest);
 	out->route.prefix = bits;
 	out->route.direct = !gateway;
 	if (!gateway && ipv4(out->local))
 		strcpy(out->route.gateway, out->local);
-	return ipv4(out->route.gateway) ? 0 : -1;
+	if (!ipv4(out->route.gateway))
+		return -1;
+	/* NetBSD can answer a /32 lookup with a covering network route. */
+	if (exact_prefix >= 0 && bits != (unsigned)exact_prefix)
+		return exact_prefix == 32 && bits < 32 &&
+		    contains(&out->route, address) ? 1 : -1;
+	return 0;
 }
 
 static int
@@ -369,8 +374,10 @@ add(const char *tool, const struct route *r, struct route *owned, size_t *n,
 {
 	struct current_route now;
 	int found = current(tool, r->dest, (int)r->prefix, run, ctx, &now);
-	if (found < 0)
+	if (found < 0) {
+		fprintf(stderr, "cannot inspect route %s/%u\n", r->dest, r->prefix);
 		return -1;
+	}
 	if (found == 0 &&
 	    same_prefix(r, &now.route)) {
 		if (same_route(r, &now.route) && owned_elsewhere(journal, r) == 0)

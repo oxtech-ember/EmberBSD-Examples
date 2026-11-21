@@ -44,10 +44,24 @@ Kernel WireGuard (`if_wg`) is optional; this tray targets the userspace path.
 Before upgrading from 0.1.2, deactivate all tunnels in that version. The new
 helper does not adopt the old runtime state; reactivate tunnels after upgrading.
 
-## Host parser checks
+## Administrator setup
 
-The `tunnel_test` target has no Qt dependency. It checks name validation and
-config parsing. From the Examples repository root:
+Only root or members of the `wireguard` system group can activate or
+deactivate tunnels. The same rule applies to the tray and to
+`/usr/pkg/libexec/ember-wireguard-ctl up|down name`. Users can still view
+their tunnel list and status without this group.
+
+Add only accounts that may change system IPv4 routes. On EmberBSD, run
+`groupadd wireguard` as root if the group does not exist. To add an
+operator, run `usermod -G wireguard username` as root. The operator must
+sign out of the desktop or SSH session and sign in again. Deactivate
+tunnels before an upgrade if their users will lose access to `down`.
+
+## Host checks
+
+The `tunnel_test` target checks name validation and config parsing.
+The `authorization_test` target checks simulated caller credentials.
+Both targets run without Qt or root. From the Examples repository root:
 
 ```sh
 cmake -S desktop/ember-wireguard -B "$host_build" -G Ninja \
@@ -59,4 +73,4 @@ ctest --test-dir "$host_build" --output-on-failure
 
 ## Source and license
 
-BSD-2-Clause. Pattern follows `desktop/ember-wifi`. Version 0.1.3.
+BSD-2-Clause. Pattern follows `desktop/ember-wifi`. Version 0.1.4.

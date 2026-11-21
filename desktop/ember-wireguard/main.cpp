@@ -64,7 +64,7 @@ struct TunnelRow {
 
 static const char *kCtl = "/usr/pkg/libexec/ember-wireguard-ctl";
 static const char *kWg = "/usr/pkg/bin/wg";
-static const char *kAppVersion = "0.1.3";
+static const char *kAppVersion = "0.1.4";
 
 static QIcon vpnIcon(bool connected)
 {

@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <limits.h>
 #include <pwd.h>
 #include <signal.h>
@@ -35,6 +36,7 @@
 #define WGO "/usr/pkg/bin/wireguard-go"
 #define IFCONFIG "/sbin/ifconfig"
 #define ROUTE "/sbin/route"
+#define OPERATOR_GROUP "wireguard"
 
 /* User config dirs under $HOME/.config — prefer ember-wireguard. */
 static const char *user_conf_dirs[] = {
@@ -66,6 +68,31 @@ drop_env(void)
 	static char *safe_env[] = { "PATH=/usr/pkg/bin:/sbin:/usr/sbin:/bin:/usr/bin", "LC_ALL=C", NULL };
 	extern char **environ;
 	environ = safe_env;
+}
+
+static int
+may_change_tunnel(uid_t user)
+{
+	const struct group *group;
+	gid_t groups[NGROUPS_MAX];
+	int count, i;
+
+	if (user == 0)
+		return 1;
+
+	group = getgrnam(OPERATOR_GROUP);
+	if (group == NULL)
+		return 0;
+	count = getgroups(NGROUPS_MAX, groups);
+	if (count < 0)
+		return 0;
+	if (getgid() == group->gr_gid)
+		return 1;
+	for (i = 0; i < count; i++) {
+		if (groups[i] == group->gr_gid)
+			return 1;
+	}
+	return 0;
 }
 
 /* Drain the pipe even after the bounded capture fills; never log its contents. */
@@ -1232,6 +1259,11 @@ main(int argc, char **argv)
 	if (strcmp(cmd, "detail") == 0)
 		return cmd_detail(argv[2], user);
 	if (strcmp(cmd, "up") == 0 || strcmp(cmd, "down") == 0) {
+		if (!may_change_tunnel(user)) {
+			fprintf(stderr, "Permission denied: tunnel changes require "
+			    "root or membership in the " OPERATOR_GROUP " group.\n");
+			return 1;
+		}
 #ifdef __NetBSD__
 		int lockfd, result;
 		lockfd = runtime_lock();

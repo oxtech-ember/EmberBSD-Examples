@@ -15,6 +15,7 @@ struct entry { uint32_t net; unsigned bits; char gateway[32]; int direct; };
 struct model {
  struct entry routes[100]; size_t n;
  char endpoints[256]; int fail_add, fail_delete, fail_query, add_calls;
+ const char *host_reply;
  struct entry added[100]; size_t nadded;
 };
 static uint32_t ip(const char *s) { struct in_addr a; assert(inet_pton(AF_INET,s,&a)==1); return ntohl(a.s_addr); }
@@ -35,7 +36,14 @@ static int run(void *p,const char *const *a,char *out,size_t size) {
   if(m->fail_query) { snprintf(out,size,"route: routing socket error\n"); return -1; }
   if(a[5]) {
    assert(strcmp(a[5],"-prefixlen")==0); unsigned bits=(unsigned)strtoul(a[6],NULL,10); assert(bits<=32);
+   if (bits == 32 && m->host_reply != NULL) {
+    snprintf(out, size, "%s", m->host_reply);
+    return 0;
+   }
    best=index_of(m,dst&mask(bits),bits);
+   /* NetBSD host queries can return the best covering network. */
+   if(best<0 && bits==32)
+    for(size_t i=0;i<m->n;i++) if((dst&mask(m->routes[i].bits))==m->routes[i].net && (best<0 || m->routes[i].bits>m->routes[best].bits)) best=(int)i;
   } else {
    for(size_t i=0;i<m->n;i++) if((dst&mask(m->routes[i].bits))==m->routes[i].net && (best<0 || m->routes[i].bits>m->routes[best].bits)) best=(int)i;
   }
@@ -75,6 +83,38 @@ int main(void) {
  init(&m); assert(up(&m,bad,1,j)!=0 && m.n==1 && access(j,F_OK)<0); assert(up(&m,malformed,1,j)!=0 && m.n==1 && access(j,F_OK)<0); strcpy(m.endpoints,"pubkey\t(none)\n"); assert(up(&m,full,1,j)!=0 && m.n==1 && access(j,F_OK)<0);
  init(&m); insert(&m,"203.0.113.10",32,"198.51.100.1",0); insert(&m,"0.0.0.0",1,"192.0.2.8",1); assert(up(&m,full,1,j)==0); assert(down(&m,j)==0); assert(exists(&m,"0.0.0.0",1,"192.0.2.8",1));
  init(&m); m.fail_query=1; assert(up(&m,net,1,j)!=0 && m.n==1 && access(j,F_OK)<0);
+ /* A covering endpoint network is preserved while a host escape is owned. */
+ init(&m); insert(&m,"203.0.113.0",24,"198.51.100.2",0);
+ assert(up(&m,full,1,j)==0);
+ assert(exists(&m,"203.0.113.10",32,"198.51.100.2",0));
+ assert(down(&m,j)==0 && m.n==2);
+ assert(exists(&m,"203.0.113.0",24,"198.51.100.2",0));
+ assert(exists(&m,"0.0.0.0",0,"198.51.100.1",0));
+ /* An already removed endpoint must not make cleanup delete the default. */
+ init(&m); assert(up(&m,full,1,j)==0);
+ { int endpoint=index_of(&m,ip("203.0.113.10"),32); assert(endpoint>=0);
+   memmove(&m.routes[endpoint],&m.routes[endpoint+1],(m.n-(size_t)endpoint-1)*sizeof(m.routes[0])); m.n--; }
+ assert(down(&m,j)==0 && m.n==1);
+ assert(exists(&m,"0.0.0.0",0,"198.51.100.1",0));
+ /* An invalid host lookup must retain ownership for a later retry. */
+ const char *invalid_host_replies[] = {
+  "destination: 198.51.100.0\nmask: 255.255.255.0\n"
+  "gateway: 198.51.100.1\ninterface: wm0\nflags: <UP,GATEWAY,STATIC>\n",
+  "destination: 203.0.113.0\nmask: 255.255.255.0\n"
+  "gateway: invalid\ninterface: wm0\nflags: <UP,GATEWAY,STATIC>\n",
+  "destination: 203.0.113.0\nmask: 255.255.0.255\n"
+  "gateway: 198.51.100.1\ninterface: wm0\nflags: <UP,GATEWAY,STATIC>\n"
+ };
+ for (size_t k = 0; k < sizeof(invalid_host_replies) / sizeof(invalid_host_replies[0]); k++) {
+  init(&m);
+  assert(up(&m, full, 1, j) == 0);
+  m.host_reply = invalid_host_replies[k];
+  assert(down(&m, j) != 0 && access(j, F_OK) == 0);
+  assert(exists(&m, "203.0.113.10", 32, "198.51.100.1", 0));
+  m.host_reply = NULL;
+  assert(down(&m, j) == 0 && m.n == 1 && access(j, F_OK) < 0);
+  assert(exists(&m, "0.0.0.0", 0, "198.51.100.1", 0));
+ }
  /* Exact lookups distinguish an owned /24 from an overlapping /32. */
  init(&m); assert(up(&m,net,1,j)==0); insert(&m,"10.1.2.0",32,"198.51.100.2",0); assert(down(&m,j)==0); assert(exists(&m,"10.1.2.0",32,"198.51.100.2",0)); assert(!exists(&m,"10.1.2.0",24,"192.0.2.8",1));
  /* Transient lookup errors are not absence, and retain the journal. */
