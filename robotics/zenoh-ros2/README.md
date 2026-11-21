@@ -2,7 +2,7 @@
 
 A C controller publishes **simulated** temperature and accepts a simulated
 setpoint. A C++ bridge exposes typed ROS 2 topics on Ubuntu 24.04 / Jazzy.
-Both endpoints use Zenoh-Pico 1.10.1 from EmberBSD Ports. No actuator is used.
+Both endpoints use Zenoh-Pico 1.10.2 from EmberBSD Ports. No actuator is used.
 
 ```text
 EmberBSD: robot-controller (C, Zenoh peer TCP listener)
@@ -25,7 +25,7 @@ the device endpoint is configured explicitly. ROS discovery runs on the ROS host
 - ROS host: Ubuntu 24.04, ROS 2 Jazzy, `rclcpp`,
   `rosidl_default_generators`, `rmw_fastrtps_cpp`, a C++17 compiler and CMake.
   Jazzy is the supported LTS chosen for this integration.
-- Both hosts: the same patched Zenoh-Pico 1.10.1. One installation per host
+- Both hosts: the same patched Zenoh-Pico 1.10.2. One installation per host
   serves all example binaries. The TCP send-timeout patch is required.
 - A trusted test network and an unused TCP port. This example has no
   authentication, encryption or authorization for commands.
@@ -75,11 +75,11 @@ example=/absolute/path/to/EmberBSD-Examples/robotics/zenoh-ros2
 work=$HOME/ember-ros-demo
 mkdir "$work"
 cd "$work"
-revision=e1ab223a28aaebb5dec1e70d98eab152332f777a
+revision=6a881c21dad1f778d0529eb9f297bea339016526
 curl --fail --location --output zenoh.tar.gz \
   "https://codeload.github.com/eclipse-zenoh/zenoh-pico/tar.gz/$revision"
 printf '%s  %s\n' \
-  b662b7f6b9094684311a22748b3d45a595fad62d2f7793283f43e553b2175ddc \
+  a1b816a05e5af3d9e50863088987f4b2608c1243507ba833ea5549a35222c9cb \
   zenoh.tar.gz | sha256sum -c -
 tar xzf zenoh.tar.gz
 patch -d "zenoh-pico-$revision" -p0 < \
