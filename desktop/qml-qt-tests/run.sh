@@ -22,7 +22,7 @@ fi
     -DCMAKE_PREFIX_PATH="$QT_HOST_PREFIX" \
     -DCMAKE_MAKE_PROGRAM="$NINJA" -DCMAKE_CXX_COMPILER="$CXX" \
     -DCMAKE_BUILD_TYPE=MinSizeRel "$@"
-"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference qt_mousearea qt_behavior qt_visual_opacity
+"$CMAKE" --build "$OUT/qt-reference-build" --target qt_reference qt_mousearea qt_behavior qt_visual_opacity qt_dial
 for scene in visualparent visualparent2 grid-spacing; do
     case "$scene" in
     visualparent) width=320; height=480; symbol=visualparent ;;
@@ -106,3 +106,22 @@ for scene in mousearea behavior visual-opacity; do
         cat "$OUT/$scene-runtime.txt"
     fi
 done
+
+
+# Compare the instrument's moving layers with the unchanged Qt slider and dial.
+"$PYTHON" "$EMBER_SDK_SOURCE/scripts/qml-compile.py" "$src/dial.qml" \
+    --name dial --pngtopam "$HOST_PREFIX/bin/pngtopam" -o "$OUT/generated/dial.c"
+"$CC" -std=c11 -Wall -Wextra -Werror -I"$EMBER_RUNTIME_SOURCE/qml" \
+    "$src/dial_trace.c" "$OUT/generated/dial.c" "$EMBER_RUNTIME_SOURCE/qml/eqml.c" \
+    "$EMBER_RUNTIME_SOURCE/qml/eqml_input.c" -o "$OUT/dial-trace"
+"$OUT/dial-trace" "$OUT/frames"
+for mode in verify-hands reference; do
+    dest="$OUT/frames"
+    if [ "$mode" = verify-hands ]; then dest="$src/dial-art"; fi
+    QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_SCALE_FACTOR=1 \
+        QT_QPA_PLATFORM_PLUGIN_PATH="$QT_HOST_PREFIX/plugins/platforms" \
+        QT_PLUGIN_PATH="$QT_HOST_PREFIX/plugins" QML2_IMPORT_PATH="$QT_HOST_PREFIX/qml" \
+        "$OUT/qt-reference-build/qt_dial" "$mode" \
+        "$src/upstream/qtdeclarative-v6.12.0/dialcontrol" "$dest"
+done
+"$PYTHON" "$src/compare_dial.py" "$OUT/frames"

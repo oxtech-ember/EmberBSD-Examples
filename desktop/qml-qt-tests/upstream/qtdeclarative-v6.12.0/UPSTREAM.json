@@ -48,6 +48,46 @@
       "path": "src/quick/doc/snippets/qmlapp/usecases/visual-opacity.qml",
       "sha256": "6688229618fdf7a1556262e6838d8c2e2dd201d55f36569707718a1496ebbbc2",
       "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/Dial.qml": {
+      "path": "examples/quick/customitems/dialcontrol/Dial.qml",
+      "sha256": "e9027186ec18a85cf21ddddf582a7d95d4ec0eeb295b3539500f079eaa37a9fe",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/QuitButton.qml": {
+      "path": "examples/quick/customitems/dialcontrol/QuitButton.qml",
+      "sha256": "b1d8bb7ba1fc091cc199e1d1580f9cbcb45ddbf3457b9784db70f28884b9172d",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/background.png": {
+      "path": "examples/quick/customitems/dialcontrol/background.png",
+      "sha256": "d712a54aa0bf05ac58d14380b1150d36b806b4eef64729cfb8cf2d22bf58bcca",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/dialcontrol.qml": {
+      "path": "examples/quick/customitems/dialcontrol/dialcontrol.qml",
+      "sha256": "76c9fe56694f0d6346a53374fd820d2b54b047ce6857df94db90d2d59b5d1968",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/needle.png": {
+      "path": "examples/quick/customitems/dialcontrol/needle.png",
+      "sha256": "161d68d6eaf3b812ff1badd1e5878ef6be43abfbd36405fcf3f099c2e9bb7371",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/needle_shadow.png": {
+      "path": "examples/quick/customitems/dialcontrol/needle_shadow.png",
+      "sha256": "20118e79d31759fc24de3c10f418da429fb612a13f23ea3a1f63d4879a343d98",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/overlay.png": {
+      "path": "examples/quick/customitems/dialcontrol/overlay.png",
+      "sha256": "5f5feadbe53b28a30fbe35f68885587698e34417f4868a1a127385821f6665cc",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+    },
+    "dialcontrol/quit.png": {
+      "path": "examples/quick/customitems/dialcontrol/quit.png",
+      "sha256": "6cc80c4acc50bbd698a64242e68bd62557daac07c1ee63c5e0c73cce29b731ec",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
     }
   }
 }

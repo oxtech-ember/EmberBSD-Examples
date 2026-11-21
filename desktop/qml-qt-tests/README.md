@@ -3,7 +3,8 @@
 This test ties together the implemented SDK QML compiler, the experimental
 EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four
 static fixtures compare RGB565 frames. Three interactive fixtures check
-pointer event handling, animated motion and visibility.
+pointer event handling, animated motion and visibility. A touch adaptation
+compares an analog instrument with the original Qt dial.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -54,9 +55,26 @@ components and Qt blends before converting to RGB565. For blue over the dark
 background, Runtime produced `0x10b1` and Qt produced `0x10b2`. Both produced
 `0x800f` where blue overlapped red.
 
+## Dial control
+
+The touch adaptation in [dial.qml](dial.qml) uses the original face, needle,
+shadow and glass from Qt Quick's `customitems/dialcontrol`. Five tap targets
+select a percentage. The hand, digital readout and selected marker change
+together. The original example uses a continuous slider and a spring rotation.
+The target links the face and glass once, plus five cropped positions of the
+hand and shadow. The device runner handles exit on a process signal.
+
+The host test drags the original Qt slider, samples the settled face at each
+chosen value and compares it with a Runtime touch sequence. It checks the
+printed face, the red needle mask, the selected marker, five distinct readouts
+and exact restoration of the initial frame. Raster filtering and RGB565
+quantization allow small differences. The original input paths and SHA-256
+digests are in the upstream manifest. The derived PNGs use the same BSD
+license as the [Qt artwork](dial-art/README.md).
+
 ## Run
 
-Set the native Ports prefix with Qt 6.12, SDK source and Runtime source. Choose a
+Set the native Ports prefix with Qt 6.12 and Netpbm, SDK source and Runtime source. Choose a
 separate output directory:
 
 ```sh

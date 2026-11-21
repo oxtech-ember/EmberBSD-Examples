@@ -13,16 +13,18 @@ compiler=${TARGET_CLANG:-$HOST_PREFIX/bin/clang}
 python=${PYTHON:-$HOST_PREFIX/bin/python3.15}
 runtime_qml=$runtime/qml
 scene=${1:-mousearea}
+input=$src/upstream/qtdeclarative-v6.12.0/$scene.qml
+set --
 case "$scene" in
 mousearea|behavior) symbol=$scene ;;
 visual-opacity) symbol=visualopacity ;;
-*) echo "usage: $0 [mousearea|behavior|visual-opacity]" >&2; exit 2 ;;
+dial) symbol=dial; input=$src/dial.qml; set -- --pngtopam "$HOST_PREFIX/bin/pngtopam" ;;
+*) echo "usage: $0 [mousearea|behavior|visual-opacity|dial]" >&2; exit 2 ;;
 esac
-input=$src/upstream/qtdeclarative-v6.12.0/$scene.qml
 mkdir -p "$OUT/obj" "$OUT/generated"
 
 "$python" "$sdk/scripts/qml-compile.py" "$input" \
-	--name "$symbol" --output "$OUT/generated/$scene.c"
+	--name "$symbol" --output "$OUT/generated/$scene.c" "$@"
 
 cc()
 {

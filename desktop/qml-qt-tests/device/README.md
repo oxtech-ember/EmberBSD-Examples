@@ -102,3 +102,14 @@ viewport so drag exit/release behavior remains testable. Stop with SIGINT,
 SIGTERM or SIGHUP to restore the display mode. The temporary node disappears
 when `/tmp` is cleared; no startup or persistent device configuration is
 written.
+
+## Analog dial control
+
+Pass `dial` to `device/build.sh` and run the resulting `$OUT/dial` with
+the same wsdisplay and wsmouse paths. The native Ports prefix supplies Netpbm
+for the PNG build inputs. On a 480 × 480 screen, the centered 352 × 376 panel
+shows a silver dial with a red needle. At y = 385, tap x = 364 (100%),
+178 (25%), then 240 (50%). The needle points down-right, then
+up-left, then straight up. The digital value and amber
+marker follow each tap. The five discrete selections use the artwork and
+settled angles of the original Qt slider example.
