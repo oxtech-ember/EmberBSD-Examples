@@ -1,8 +1,9 @@
 # QML-to-Qt Quick pixel integration tests
 
 This test ties together the implemented SDK QML compiler, the experimental
-EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four static fixtures compare RGB565 frames. Two interactive fixtures check
-pointer event handling and animated motion.
+EmberBSD Runtime renderer and an independent Qt Quick 6.12 renderer. Four
+static fixtures compare RGB565 frames. Three interactive fixtures check
+pointer event handling, animated motion and visibility.
 
 The untouched upstream inputs are kept in
 [`upstream/qtdeclarative-v6.12.0`](upstream/qtdeclarative-v6.12.0). Their exact
@@ -41,6 +42,17 @@ the label “Behavior animation”. Each click on the square sets a new x coordi
 Runtime traces click twice, check that intermediate positions occur, and compare
 the two endpoints. The Runtime trace also checks the halfway position and that
 the timer sleeps after the animation completes.
+
+The Qt documentation snippet `visual-opacity.qml` draws two overlapping
+squares. The blue square has opacity 0.5. Tapping their parent area hides
+the blue square and reveals the red and background underneath; another tap
+restores it. The test compares complete 320 × 480 frames before tapping,
+after an outside tap, after hiding and after restoring. All color boundaries
+and opaque pixels must match Qt exactly. Within the blue square, the
+comparison allows one RGB565 level per channel because Runtime blends packed
+components and Qt blends before converting to RGB565. For blue over the dark
+background, Runtime produced `0x10b1` and Qt produced `0x10b2`. Both produced
+`0x800f` where blue overlapped red.
 
 ## Run
 

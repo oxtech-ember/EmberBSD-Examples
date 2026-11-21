@@ -41,6 +41,16 @@ option off when measuring animation timing. Coordinates in the log are relative
 to the scene. The original test continues moving the square to the right on
 each click. Restart the application to restore its initial position.
 
+## Upstream opacity and visibility
+
+With the same build environment, pass `visual-opacity` to `device/build.sh`.
+Run `$OUT/visual-opacity` on the target with the display and pointer paths.
+The 320 × 480 scene starts at (80, 0) on a 480 × 480 display. In the lower
+half, a translucent blue square overlaps the lower-right corner of a red
+square. Tap the overlap near (205, 375). The blue square disappears and
+the red square remains. Tap the red square near (150, 320) to restore the
+original overlap. A tap near (90, 10) leaves either state unchanged.
+
 ## Upstream Row spacing
 
 Build the two static target executables from the same unchanged Qt fixture:

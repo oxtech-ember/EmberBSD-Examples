@@ -14,14 +14,15 @@ python=${PYTHON:-$HOST_PREFIX/bin/python3.15}
 runtime_qml=$runtime/qml
 scene=${1:-mousearea}
 case "$scene" in
-mousearea|behavior) ;;
-*) echo "usage: $0 [mousearea|behavior]" >&2; exit 2 ;;
+mousearea|behavior) symbol=$scene ;;
+visual-opacity) symbol=visualopacity ;;
+*) echo "usage: $0 [mousearea|behavior|visual-opacity]" >&2; exit 2 ;;
 esac
 input=$src/upstream/qtdeclarative-v6.12.0/$scene.qml
 mkdir -p "$OUT/obj" "$OUT/generated"
 
 "$python" "$sdk/scripts/qml-compile.py" "$input" \
-	--name "$scene" --output "$OUT/generated/$scene.c"
+	--name "$symbol" --output "$OUT/generated/$scene.c"
 
 cc()
 {
@@ -37,7 +38,7 @@ done
 cc -std=c11 -Wall -Wextra -Werror -I"$runtime_qml" \
 	-c "$OUT/generated/$scene.c" -o "$OUT/obj/$scene-scene.o"
 cc -std=c11 -Wall -Wextra -Werror -I"$runtime_qml" \
-	-DSCENE_SYMBOL=eqml_"$scene" -DSCENE_NAME="\"$scene\"" \
+	-DSCENE_SYMBOL=eqml_"$symbol" -DSCENE_NAME="\"$scene\"" \
 	-c "$src/device/mousearea.c" -o "$OUT/obj/$scene-app.o"
 
 lib=$SYSROOT/usr/lib

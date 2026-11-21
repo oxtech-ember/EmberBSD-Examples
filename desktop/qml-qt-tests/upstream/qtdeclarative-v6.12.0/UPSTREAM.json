@@ -43,6 +43,11 @@
       "path": "tests/manual/accessibility/behavior.qml",
       "sha256": "37fa1bdaa61d10e2e43142808046fd207f4e4ac390db9fa4a5315abc1c5093b4",
       "spdx": "LicenseRef-Qt-Commercial OR GPL-3.0-only"
+    },
+    "visual-opacity.qml": {
+      "path": "src/quick/doc/snippets/qmlapp/usecases/visual-opacity.qml",
+      "sha256": "6688229618fdf7a1556262e6838d8c2e2dd201d55f36569707718a1496ebbbc2",
+      "spdx": "LicenseRef-Qt-Commercial OR BSD-3-Clause"
     }
   }
 }
