@@ -31,6 +31,7 @@ belong in Ports; kernel and driver fixes belong in the central OS project.
 - [H.265 over RTP with FFmpeg and GStreamer, packet loss and receiver restart](media/h265-rtp/README.md)
 - [Four H.265 streams in a Qt Multimedia raster window, with pixel and CPU checks](media/qt-four-streams/README.md)
 - [Local text generation and speech recognition with llama.cpp and whisper.cpp](ai/local-inference/README.md)
+- [Offline parts contours with the A733 fixed NPU task](ai/a733-parts-contours/README.md)
 - [ONNX Runtime CPU inference through installed C and C++ APIs](ai/onnx-cpu/README.md)
 - [ncnn CPU neural-network inference with independent scalar answers](ai/ncnn-cpu/README.md)
 - [Answers from local documents with SQLite FTS5 and llama.cpp](ai/local-knowledge/README.md)
