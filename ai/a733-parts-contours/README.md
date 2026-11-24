@@ -8,8 +8,7 @@ the input clip and encodes the contour frames without loss.
 
 Use an AArch64 SDK, an SDK header that provides `<arm/a733_npu_tile.h>`,
 and a matching A733 kernel. The device exposes the privileged
-`A733_NPU_TILE_RUN` ioctl on `/dev/vipcore`. Read the kernel's fixed TASK
-procedure and prepare its required identification and clock stages.
+`A733_NPU_TILE_RUN` ioctl on `/dev/vipcore`.
 AI assistance was used for this example and its validation.
 [Driver procedure](https://github.com/oxtech-ember/EmberBSD/blob/main/sys/arch/arm/sunxi/docs/a733-npu-vip.md).
 
@@ -38,7 +37,19 @@ if [ ! -e /dev/vipcore ]; then
 fi
 test -c /dev/vipcore
 test "$(stat -f '%Hr:%Lr' /dev/vipcore)" = "$major:0"
+```
 
+For the Zero 4 `graphics` profile with on-demand NPU support, run the
+client after checking the device node. It opens `/dev/vipcore` and submits
+the tile ioctl directly. The driver prepares the NPU on the first admitted
+request and reuses the context on subsequent requests. The same procedure
+applies to cold and warm runs.
+
+For the dedicated `npu-observe` profile or an older compatible kernel
+and DTB with manual preparation, run these stages once per boot before
+the first tile. Leave the FE and diagnostic TASK profiles unselected.
+
+```sh
 for stage in 1 2 3 4; do
   if [ "$stage" -eq 3 ]; then
     if sysctl -w "$npu.stage=$stage"; then
@@ -58,7 +69,6 @@ done
 
 Stage 3 must fail with `EBUSY` (16) for the cold preflight. The loop checks
 the cached result before advancing. Stages 1, 2 and 4 must succeed.
-Leave the FE and diagnostic TASK profiles unselected on this boot.
 
 ## Run one physical tile
 
@@ -148,9 +158,18 @@ python3 reference.py 720 540 frame0.gray frame0-cpu.gray \
 The first source frame is also the calibration frame. Use the same
 preparation for its independent CPU comparison.
 
-## Orange Pi Zero 4 acceptance
+## Orange Pi Zero 4 graphics acceptance
 
-With [EmberBSD kernel `ff55aa03`](https://github.com/oxtech-ember/EmberBSD/commit/ff55aa034d41208744ee3e21d5620e1df8156813),
+With [EmberBSD kernel `e120f07b`](https://github.com/oxtech-ember/EmberBSD/commit/e120f07b8276e317e7bcb549de2816d0b49f5d84)
+and the matching `graphics` DTB, the first admitted tile ioctl prepared
+the NPU from stage 0. Two 24-frame 96×96 clip runs matched the CPU
+reference in the same accelerated virtual Plasma session. Each run added
+3,456 IRQs. The client times were 41.08 and 35.69 seconds.
+Physical HDMI remains unverified.
+
+## Orange Pi Zero 4 NPU observation acceptance
+
+With the dedicated `npu-observe` DTB and [EmberBSD kernel `ff55aa03`](https://github.com/oxtech-ember/EmberBSD/commit/ff55aa034d41208744ee3e21d5620e1df8156813),
 the board processed 24 panel frames at 96×96. The 221,184 verified
 positions across 3,456 tile calls took 22.46 seconds of elapsed client
 time. The output matched the CPU reference byte for byte. Its SHA-256
