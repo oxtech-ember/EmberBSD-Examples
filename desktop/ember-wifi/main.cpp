@@ -29,10 +29,50 @@
 #include <poll.h>
 #include <unistd.h>
 
+#if defined(__NetBSD__)
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <net80211/ieee80211.h>
+#include <net80211/ieee80211_crypto.h>
+#include <net80211/ieee80211_ioctl.h>
+#endif
+
 #include <cstring>
+#include <memory>
 #include <optional>
 
 static const char *kCtrlDir = "/var/run/wpa_supplicant";
+
+// Ask net80211 whether the interface scans without leaving its network.
+// The station management GET needs no privilege. Other systems and older
+// kernels report no such scan.
+static bool connectedScanSupported(const QString &iface)
+{
+#if defined(__NetBSD__) && defined(IEEE80211_IOC_STA_MGMT) && \
+    defined(IEEE80211_STA_CAP_SCAN)
+	const std::string name = iface.toStdString();
+	if (name.empty() || name.size() >= IFNAMSIZ)
+		return false;
+	int s = ::socket(AF_INET, SOCK_DGRAM, 0);
+	if (s < 0)
+		return false;
+	auto req = std::make_unique<ieee80211req_sta_mgmt>();
+	std::memset(req.get(), 0, sizeof(*req));
+	ieee80211req ir;
+	std::memset(&ir, 0, sizeof(ir));
+	std::strncpy(ir.i_name, name.c_str(), sizeof(ir.i_name) - 1);
+	ir.i_type = IEEE80211_IOC_STA_MGMT;
+	ir.i_len = sizeof(*req);
+	ir.i_data = req.get();
+	bool ok = ::ioctl(s, SIOCG80211, &ir) == 0 &&
+	    (req->flags & IEEE80211_STA_CAP_SCAN) != 0;
+	::close(s);
+	return ok;
+#else
+	(void)iface;
+	return false;
+#endif
+}
 
 // Request/response client for the wpa_supplicant control socket.
 class WpaCtrl {
@@ -245,10 +285,13 @@ private:
 		return ctrl_.ask(cmd);
 	}
 
+	// The refresh button and opening the window ask for a new scan; the
+	// list then fills in as results arrive (refreshList() in tick()).
 	void refreshScan()
 	{
 		auto st = wpa::parseKeyValues(ctrlAsk("STATUS"));
-		ctrlAsk(wpa::scanRequest(st["wpa_state"]));
+		ctrlAsk(wpa::scanRequest(st["wpa_state"], true,
+		    connectedScanSupported(iface_)));
 		refreshList();
 	}
 

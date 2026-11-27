@@ -13,11 +13,18 @@
 
 namespace wpa {
 
-inline std::string scanRequest(const std::string &state)
+// A new scan without a connection, or on a user request while connected
+// when the driver scans without leaving the network (IEEE80211_STA_CAP_SCAN).
+// Other drivers leave the network to scan, and a scan during association
+// can interrupt it, so those cases read the cached results.
+inline std::string scanRequest(const std::string &state, bool user = false,
+    bool connectedScan = false)
 {
-	// Foreground scans can interrupt association on station-mode drivers.
-	return state == "DISCONNECTED" || state == "INACTIVE"
-	    ? "SCAN" : "SCAN_RESULTS";
+	if (state == "DISCONNECTED" || state == "INACTIVE")
+		return "SCAN";
+	if (state == "COMPLETED" && user && connectedScan)
+		return "SCAN";
+	return "SCAN_RESULTS";
 }
 
 enum class Security { Open, Psk, SaeOnly, Enterprise, Unsupported };

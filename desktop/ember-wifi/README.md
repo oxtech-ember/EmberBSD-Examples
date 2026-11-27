@@ -12,9 +12,14 @@ Saving network changes requires `update_config=1` in the supplicant configuratio
 
 Open and WPA/WPA2-PSK networks are supported. WPA2/WPA3 transition networks use WPA2.
 WPA3-only, Enterprise, and WEP networks are displayed as unsupported.
-During connection or negotiation, refresh reads cached scan results.
-Active scans run only in the disconnected or inactive state.
-This avoids starting a scan that can interrupt an established connection.
+Without a connection, refresh and the 20-second update start a new scan.
+While connected, the refresh button and opening the window start a new scan
+only when the kernel reports a scan that keeps the connection
+(`IEEE80211_STA_CAP_SCAN` in the unprivileged `IEEE80211_IOC_STA_MGMT` GET).
+Other drivers leave the network to scan, so for them, as for the periodic
+update and during connection or negotiation, refresh reads cached results.
+The supplicant drops cached networks that a scan has not seen for a few
+minutes, so without a new scan the list can show only the current network.
 
 The application needs a graphical session with a system tray, a session D-Bus,
 Qt 6 Widgets, KDE Frameworks DBusAddons, and a running `wpa_supplicant`. Its
@@ -51,8 +56,8 @@ Choose desktop autostart policy separately for the intended user.
 ## Host parser and command checks
 
 The existing `wpa_test` target has no Qt dependency.
-It checks reply parsing, network grouping, scan selection, passphrase validation,
-and the commands prepared for a network.
+It checks reply parsing, network grouping, scan selection for each supplicant
+state and request, passphrase validation, and the commands prepared for a network.
 Set `host_cxx` to the host GCC16 C++ compiler and `host_build` to a separate output directory:
 
 ```sh

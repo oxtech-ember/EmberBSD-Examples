@@ -109,6 +109,17 @@ static void test_scan_request()
 	CHECK(wpa::scanRequest("") == "SCAN_RESULTS");
 	CHECK(wpa::scanRequest("DISCONNECTED") == "SCAN");
 	CHECK(wpa::scanRequest("INACTIVE") == "SCAN");
+	// A user refresh while connected scans only without leaving the network.
+	CHECK(wpa::scanRequest("COMPLETED", true, true) == "SCAN");
+	CHECK(wpa::scanRequest("COMPLETED", true, false) == "SCAN_RESULTS");
+	CHECK(wpa::scanRequest("COMPLETED", false, true) == "SCAN_RESULTS");
+	for (const char *s : {"ASSOCIATING", "ASSOCIATED", "AUTHENTICATING",
+	    "4WAY_HANDSHAKE", "GROUP_HANDSHAKE", "SCANNING", ""}) {
+		CHECK(wpa::scanRequest(s, true, true) == "SCAN_RESULTS");
+		CHECK(wpa::scanRequest(s, false, true) == "SCAN_RESULTS");
+	}
+	CHECK(wpa::scanRequest("DISCONNECTED", true, false) == "SCAN");
+	CHECK(wpa::scanRequest("INACTIVE", false, false) == "SCAN");
 }
 
 int main()
